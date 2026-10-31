@@ -1,1 +1,64 @@
-/* You can add global styles to this file, and also import other style files */
+@use './app/editor-styles';
+@use './app/project-styles';
+@use './app/responsive-styles';
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: #191c20;
+  color: #c7ccd2;
+  font-family: Inter, 'Segoe UI', sans-serif;
+  font-size: 12px;
+}
+button,
+input,
+select {
+  font: inherit;
+}
+button,
+a,
+input,
+select {
+  -webkit-tap-highlight-color: transparent;
+}
+button {
+  color: inherit;
+}
+button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed !important;
+}
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid #8cd5ba;
+  outline-offset: 2px;
+}
+button {
+  cursor: pointer;
+}
+input[type='checkbox'] {
+  accent-color: #8cd5ba;
+  width: 25px;
+  height: 13px;
+  cursor: pointer;
+}
+input[type='color'] {
+  cursor: pointer;
+}
+::selection {
+  background: #426756;
+  color: #fff;
+}
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-thumb {
+  background: #3e454d;
+  border-radius: 3px;
+}

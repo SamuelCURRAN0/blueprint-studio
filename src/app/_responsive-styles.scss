@@ -1,0 +1,65 @@
+.close-drawer,
+.explorer-toggle,
+.properties-toggle {
+  display: none;
+}
+.editor {
+  position: relative;
+}
+.object-list {
+  flex-shrink: 0;
+}
+.layer-section {
+  flex-shrink: 0;
+}
+.property-section {
+  flex-shrink: 0;
+}
+@media (max-width: 900px) {
+  .explorer-toggle {
+    display: inline-flex;
+  }
+  .left-sidebar.drawer-open {
+    display: flex;
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 220px;
+    z-index: 25;
+    box-shadow: 10px 0 35px #0007;
+  }
+  .left-sidebar .close-drawer {
+    display: inline-flex;
+  }
+  .left-sidebar .object-list {
+    max-height: 40vh;
+  }
+}
+@media (max-width: 700px) {
+  .properties-toggle {
+    display: inline-flex;
+  }
+  .right-sidebar.drawer-open {
+    display: flex;
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 246px;
+    z-index: 25;
+    box-shadow: -10px 0 35px #0007;
+  }
+  .right-sidebar .close-drawer {
+    display: inline-flex;
+  }
+  .toolbar .export-menu-wrap {
+    z-index: 32;
+  }
+  .workspace-heading > div {
+    gap: 7px;
+  }
+  .workspace-heading .workspace-dot {
+    display: none;
+  }
+}

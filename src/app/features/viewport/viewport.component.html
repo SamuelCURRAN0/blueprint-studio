@@ -1,0 +1,50 @@
+<section class="viewport" [class.active]="state.activeView() === view()">
+  <header>
+    <div class="view-name">
+      <span class="view-dot" [class]="'view-dot ' + view()"></span>
+      <h2>{{ title() }}</h2>
+      <span class="axes">{{ axes() }}</span>
+    </div>
+    <div class="view-actions">
+      <span class="zoom">{{ format((transform().scale / 40) * 100) }}%</span
+      ><button (click)="fit()" title="Fit drawing" aria-label="Fit drawing">
+        <app-icon name="fit" /></button
+      ><button (click)="reset()" title="Reset view" aria-label="Reset view">
+        <app-icon name="reset" />
+      </button>
+    </div>
+  </header>
+  <div class="canvas-container">
+    <canvas
+      #canvas
+      tabindex="0"
+      [attr.aria-label]="title() + ' drawing canvas. Use mouse to draw and middle mouse to pan.'"
+      [class.drawing]="state.tool() !== 'select' && state.tool() !== 'move'"
+      (pointerdown)="pointerDown($event)"
+      (pointermove)="pointerMove($event)"
+      (pointerup)="pointerUp($event)"
+      (pointercancel)="pointerUp($event)"
+      (pointerleave)="hover.set(null); tooltip.set('')"
+      (wheel)="wheel($event)"
+      (contextmenu)="$event.preventDefault()"
+    ></canvas>
+    <span class="view-label">ORTHOGRAPHIC <span>·</span> {{ axes() }}</span>
+    @if (tooltip()) {
+      <div class="coordinate-tooltip">{{ tooltip() }}</div>
+    }
+    @if (state.pending(); as pending) {
+      <div class="constraint-badge">
+        <span></span
+        >{{
+          pending.view === view()
+            ? 'First projection defined'
+            : 'Shared axis constrained · click to complete'
+        }}
+      </div>
+    }
+    <div class="scale">
+      <span [style.width.px]="scaleBar().pixels"></span>{{ format(scaleBar().length) }}
+      {{ state.project().units }}
+    </div>
+  </div>
+</section>

@@ -3,6 +3,13 @@ import { App } from './app';
 
 describe('App', () => {
   beforeEach(async () => {
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        disconnect() {}
+      },
+    );
     await TestBed.configureTestingModule({
       imports: [App],
     }).compileComponents();
@@ -14,10 +21,11 @@ describe('App', () => {
     expect(app).toBeTruthy();
   });
 
-  it('should render title', async () => {
+  it('renders the orthographic workspace', async () => {
     const fixture = TestBed.createComponent(App);
     await fixture.whenStable();
     const compiled = fixture.nativeElement as HTMLElement;
-    expect(compiled.querySelector('h1')?.textContent).toContain('Hello, blueprint-studio');
+    expect(compiled.querySelector('h1')?.textContent).toContain('Orthographic workspace');
+    expect(compiled.querySelectorAll('app-viewport')).toHaveLength(3);
   });
 });
