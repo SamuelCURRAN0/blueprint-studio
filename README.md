@@ -18,6 +18,14 @@ npm test -- --watch=false
 
 The production application is emitted to `dist/blueprint-studio/browser`. Tests use the project's Angular/Vitest configuration.
 
+## Automatic deployment with Netlify
+
+Import the GitHub repository into Netlify and choose `main` as the production branch. The root `netlify.toml` provides the build command, publish directory, Node.js 24/npm 12.0.1 versions and the single-page application fallback. No backend or environment secrets are required.
+
+Once the repository is linked, each push to `main` automatically builds and publishes the site. Saving a local file alone does not deploy it; commit and push the change to GitHub. Use Netlify's Deploys page to check the build result and live URL.
+
+Projects remain local to each visitor's browser and website address. Save a project file from localhost and import it on the deployed site to continue an existing drawing.
+
 ## Coordinates and point creation
 
 One canonical `BlueprintPoint { id, x, y, z }` represents each 3D point. Viewports derive projections; there are no separate per-view point stores.
