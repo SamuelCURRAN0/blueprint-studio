@@ -85,12 +85,13 @@ When **Connect points** or **Polyline** finds several nodes under a click, a pic
 ## Projects and exports
 
 - **Recovery:** an automatic browser-local copy is updated after a short debounce.
-- **Save project / Open saved project:** a separate explicit snapshot in the same browser. New, open, import, and example changes can be undone.
-- **JSON:** portable versioned project files. Import validates version, finite coordinates, unique IDs, ownership and endpoint references before replacing the current model. The current schema is version `1`; unknown versions are rejected for future explicit migrations.
-- **PNG / SVG:** select any orthographic view in Export, including Back. Every view uses a common 1200×1200 sheet transform computed from the entire project's XYZ extent and mirrored X extent, including hidden objects. This keeps the origin, scale and proportions identical across exported views, regardless of editor zoom/pan. Hidden objects/layers are omitted from the rendered geometry. PNG is raster; SVG contains editable vector geometry.
+- **Save project** (`Ctrl+S`): downloads a portable `<project>.blueprint.json` file containing the drawing, all reference images and their adjustments. Files go to your browser's configured download location (usually Downloads), or the location chosen in its save dialog. A browser copy is also kept when storage is available. The app does not write into the source repository.
+- **Project → Import project file:** reopens a downloaded `.blueprint.json` file. Import validates version, finite coordinates, unique IDs, ownership, endpoint references and embedded images before replacing the model. The current schema is version `1`; older supported project files remain compatible. Invalid files leave the current drawing intact. **Open browser copy** opens the last explicitly cached snapshot. New, open, import and example changes can be undone.
+- **PNG:** tick any views in Export, including Back and Bottom. **Select all** checks every view; **Visible views** checks the three currently displayed faces. One selected view downloads as a PNG; multiple selected views download as one ZIP containing a separate named PNG for each view. Each PNG is 1200×1200. The archive needs no additional runtime dependency.
+- **SVG:** choose one orthographic view in Export for editable vector geometry. All PNG and SVG views use a common scale and world origin computed from the full XYZ and mirrored X extent, including hidden objects, regardless of editor zoom/pan. Hidden geometry is omitted. Exported images contain the drawing geometry; reference backgrounds remain in the editable project file.
 - **History:** up to 100 in-memory operations. A whole drag, rectangle, or newly created polyline segment is one operation. History and transient measurements are not serialized.
 
-Storage is local to this browser and origin. Export JSON to transfer work, keep backups, or protect against browser data removal. No cloud account or external service is required.
+Recovery and cached copies are local to this browser and origin. Downloaded project files can be kept with your other project files, backed up or transferred and imported on another computer. No cloud account or external service is required.
 
 ## Structure and verification
 

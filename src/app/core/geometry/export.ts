@@ -55,3 +55,6 @@ export function downloadBlob(blob: Blob, filename: string): void {
   anchor.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+export function projectFileStem(name: string): string {
+  return name.replace(/[^a-z0-9_-]+/gi, '-').replace(/-+$/g, '') || 'blueprint';
+}

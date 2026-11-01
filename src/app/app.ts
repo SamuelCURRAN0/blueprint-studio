@@ -14,8 +14,9 @@ import { IconComponent } from './shared/icon.component';
 import { Tool, ViewType, VIEW_TYPES, VIEW_AXES } from './core/models/blueprint';
 import { parseProject, ProjectStorageService } from './core/services/project-storage.service';
 import { demoProject } from './core/geometry/demo-project';
-import { downloadBlob, exportSvg, exportTransform } from './core/geometry/export';
-import { renderViewport } from './features/viewport/viewport-renderer';
+import { downloadBlob, exportSvg, projectFileStem } from './core/geometry/export';
+import { createZip } from './core/geometry/zip';
+import { renderPng } from './features/viewport/viewport-export';
 import { readReferenceImage } from './core/geometry/reference-image';
 
 @Component({
@@ -33,6 +34,8 @@ export class App {
   readonly rightOpen = signal(false);
   readonly saveStatus = signal('Local workspace');
   readonly exportView = signal<ViewType>('front');
+  readonly pngViews = signal<ViewType[]>(['front', 'side', 'top']);
+  readonly pngExporting = signal(false);
   readonly viewTypes = VIEW_TYPES;
   readonly referenceView = signal<ViewType>('front');
   readonly reference = computed(() => this.state.project().referenceImages?.[this.referenceView()]);
@@ -108,11 +111,23 @@ export class App {
     );
   }
   save(): void {
+    const project = this.state.project();
+    const filename = `${projectFileStem(project.name)}.blueprint.json`;
     try {
-      this.storage.save(this.state.project());
-      this.savedJson = JSON.stringify(this.state.project());
+      downloadBlob(
+        new Blob([JSON.stringify(project, null, 2)], { type: 'application/json' }),
+        filename,
+      );
+      this.savedJson = JSON.stringify(project);
       this.state.dirty.set(false);
-      this.state.notice.set('Project saved in this browser. Export JSON for a portable backup.');
+      try {
+        this.storage.save(project);
+      } catch {
+        /* The downloaded file remains the portable save. */
+      }
+      this.state.notice.set(
+        `Project download started: ${filename}. Check your browser's download location; import this file to reopen it.`,
+      );
     } catch (error) {
       this.state.notice.set(`Save failed: ${this.error(error)}`);
     }
@@ -147,6 +162,8 @@ export class App {
       if (file.size > 10_000_000) throw new Error('Project files must be smaller than 10 MB.');
       const project = parseProject(await file.text());
       this.state.replaceProject(project);
+      this.savedJson = JSON.stringify(project);
+      this.state.dirty.set(false);
       this.fitAll();
       this.state.notice.set(`Imported ${project.name}.`);
     } catch (error) {
@@ -232,55 +249,74 @@ export class App {
       .find((v) => v.view() === this.referenceView())
       ?.fit();
   }
-  export(format: 'json' | 'svg' | 'png'): void {
+  togglePngView(view: ViewType, checked: boolean): void {
+    this.pngViews.update((selected) =>
+      checked ? [...new Set([...selected, view])] : selected.filter((v) => v !== view),
+    );
+  }
+  selectVisiblePngViews(): void {
+    this.pngViews.set(this.views().map((viewport) => viewport.view()));
+  }
+  async exportPngs(): Promise<void> {
+    if (this.pngExporting()) return;
+    const selected = this.viewTypes.filter((view) => this.pngViews().includes(view));
+    if (!selected.length) {
+      this.state.notice.set('Select at least one view to export.');
+      return;
+    }
+    const project = this.state.project(),
+      points = this.state.visiblePoints(),
+      gridSize = this.state.gridSize();
+    const name = projectFileStem(project.name);
+    this.pngExporting.set(true);
+    this.state.notice.set(
+      `Rendering ${selected.length} PNG view${selected.length === 1 ? '' : 's'}…`,
+    );
+    try {
+      const files: { name: string; blob: Blob }[] = [];
+      for (const view of selected)
+        files.push({
+          name: `${name}-${view}.png`,
+          blob: await renderPng(project, points, view, gridSize),
+        });
+      if (files.length === 1) downloadBlob(files[0].blob, files[0].name);
+      else {
+        const archive = await Promise.all(
+          files.map(async (file) => ({
+            name: file.name,
+            data: new Uint8Array(await file.blob.arrayBuffer()),
+          })),
+        );
+        downloadBlob(createZip(archive), `${name}-views.zip`);
+      }
+      this.menu.set(null);
+      this.state.notice.set(
+        `${selected.length} PNG view${selected.length === 1 ? '' : 's'} ready: ${selected.join(', ')}. Download started${files.length > 1 ? ' as a ZIP' : ''}.`,
+      );
+    } catch (error) {
+      this.state.notice.set(`PNG export failed: ${this.error(error)}`);
+    } finally {
+      this.pngExporting.set(false);
+    }
+  }
+  export(format: 'json' | 'svg'): void {
+    if (format === 'json') {
+      this.save();
+      return;
+    }
     const project = this.state.project(),
       view = this.exportView();
-    const name = project.name.replace(/[^a-z0-9_-]+/gi, '-').replace(/-+$/g, '') || 'blueprint';
-    if (format === 'json')
-      downloadBlob(
-        new Blob([JSON.stringify(project, null, 2)], { type: 'application/json' }),
-        `${name}.blueprint.json`,
-      );
-    if (format === 'svg')
+    const name = projectFileStem(project.name);
+    try {
       downloadBlob(
         new Blob([exportSvg(project, view, this.state.visiblePoints())], { type: 'image/svg+xml' }),
         `${name}-${view}.svg`,
       );
-    if (format === 'png') {
-      const canvas = document.createElement('canvas');
-      canvas.width = canvas.height = 1200;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        this.state.notice.set('PNG export is unavailable in this browser.');
-        return;
-      }
-      renderViewport(
-        ctx,
-        {
-          project,
-          points: this.state.visiblePoints(),
-          view,
-          transform: exportTransform(project),
-          width: 1200,
-          height: 1200,
-          grid: false,
-          gridSize: this.state.gridSize(),
-          labels: false,
-          selectedId: null,
-          pending: null,
-          preview: null,
-        },
-        true,
-      );
-      canvas.toBlob((blob) => {
-        if (blob) downloadBlob(blob, `${name}-${view}.png`);
-        else this.state.notice.set('PNG export failed.');
-      }, 'image/png');
+      this.menu.set(null);
+      this.state.notice.set(`SVG download started · ${view} view · shared scale and origin.`);
+    } catch (error) {
+      this.state.notice.set(`SVG export failed: ${this.error(error)}`);
     }
-    this.menu.set(null);
-    this.state.notice.set(
-      `${format.toUpperCase()} exported${format !== 'json' ? ` · ${view} view · shared scale and origin` : ''}.`,
-    );
   }
   resizePanels(event: PointerEvent, direction: 'x' | 'y'): void {
     event.preventDefault();

@@ -45,9 +45,15 @@
           <div class="dropdown project-dropdown">
             <span class="dropdown-label">YOUR WORKSPACE</span
             ><button (click)="newProject()"><app-icon name="add" />New project</button
-            ><button (click)="save()"><app-icon name="save" />Save project<kbd>Ctrl S</kbd></button
-            ><button (click)="load()"><app-icon name="folder" />Open saved project</button
-            ><button (click)="fileInput.click()"><app-icon name="folder" />Import JSON</button>
+            ><button (click)="save()">
+              <app-icon name="save" />Download project file<kbd>Ctrl S</kbd></button
+            ><button (click)="fileInput.click()">
+              <app-icon name="folder" />Import project file…</button
+            ><button (click)="load()"><app-icon name="folder" />Open browser copy</button>
+            <p class="field-help project-file-help">
+              Save downloads a .blueprint.json file with your drawing and images. Reopen it with
+              Import project file. Automatic recovery stays in this browser.
+            </p>
             <hr />
             <button (click)="loadExample()"><app-icon name="cube" />Open kart study</button>
             <button (click)="help.set(true); menu.set(null)">
@@ -60,7 +66,7 @@
         class="save-button"
         aria-label="Save project"
         (click)="save()"
-        title="Save project (Ctrl+S)"
+        title="Download project file (Ctrl+S)"
       >
         <app-icon name="save" /><span>Save project</span>
       </button>
@@ -134,9 +140,48 @@
       </button>
       @if (menu() === 'export') {
         <div class="dropdown export-dropdown">
-          <span class="dropdown-label">EXPORT BLUEPRINT</span
-          ><label class="field-label">ORTHOGRAPHIC VIEW</label
-          ><select
+          <span class="dropdown-label">EXPORT BLUEPRINT</span>
+          <fieldset class="export-view-list" [disabled]="pngExporting()">
+            <legend>PNG VIEWS</legend>
+            @for (view of viewTypes; track view) {
+              <label
+                ><input
+                  type="checkbox"
+                  [attr.aria-label]="'Export ' + view[0].toUpperCase() + view.slice(1) + ' PNG'"
+                  [ngModel]="pngViews().includes(view)"
+                  (ngModelChange)="togglePngView(view, $event)"
+                />{{ view[0].toUpperCase() + view.slice(1) }}</label
+              >
+            }
+          </fieldset>
+          <div class="export-selection-actions">
+            <button [disabled]="pngExporting()" (click)="pngViews.set(viewTypes.slice())">
+              Select all
+            </button>
+            <button [disabled]="pngExporting()" (click)="selectVisiblePngViews()">
+              Visible views
+            </button>
+          </div>
+          <button [disabled]="pngExporting() || !pngViews().length" (click)="exportPngs()">
+            <app-icon name="download" />{{
+              pngExporting()
+                ? 'Preparing PNGs…'
+                : 'Download PNG' +
+                  (pngViews().length === 1 ? '' : 's') +
+                  ' (' +
+                  pngViews().length +
+                  ')'
+            }}
+            <span class="format-tag">{{ pngViews().length > 1 ? 'ZIP' : '1200²' }}</span>
+          </button>
+          <p class="field-help">
+            One 1200 × 1200 PNG per selected view. Multiple views download together as a ZIP. All
+            share the same scale and origin.
+          </p>
+          <hr />
+          <label class="field-label" for="svg-export-view">SVG VIEW</label>
+          <select
+            id="svg-export-view"
             aria-label="Export view"
             [ngModel]="exportView()"
             (ngModelChange)="exportView.set($event)"
@@ -144,13 +189,11 @@
             @for (view of viewTypes; track view) {
               <option [value]="view">{{ view[0].toUpperCase() + view.slice(1) }} view</option>
             }</select
-          ><button (click)="export('png')">
-            <app-icon name="download" />Export PNG<span class="format-tag">1200²</span></button
           ><button (click)="export('svg')">
             <app-icon name="download" />Export SVG<span class="format-tag">VECTOR</span>
           </button>
           <hr />
-          <button (click)="export('json')"><app-icon name="cube" />Export project JSON</button>
+          <button (click)="export('json')"><app-icon name="save" />Download project file</button>
           <p class="field-help">
             All views share one export scale and origin. Hidden geometry is omitted.
           </p>
@@ -756,7 +799,7 @@
     class="visually-hidden"
     type="file"
     accept=".json,application/json"
-    aria-label="Import project JSON"
+    aria-label="Import project file"
     (change)="importFile($event)"
   />
   @if (menu()) {
@@ -807,11 +850,12 @@
         </div>
         <p class="field-help">
           Scroll: zoom at cursor · Middle-drag or Alt-drag: pan · Escape: cancel.<br />X = width, Y
-          = length, Z = height. Positive horizontal axes point right (X points left in Back and Bottom);
-          positive vertical axes point up in every view. One world unit uses the same base scale in
-          every view. View zoom is independent unless synchronized.<br />Recovery copies are saved
-          automatically in this browser. Save project keeps a separate snapshot; export JSON for a
-          portable backup.
+          = length, Z = height. Positive horizontal axes point right (X points left in Back and
+          Bottom); positive vertical axes point up in every view. One world unit uses the same base
+          scale in every view. View zoom is independent unless synchronized.<br />Recovery copies
+          are saved automatically in this browser. Save project downloads a portable .blueprint.json
+          file, including reference images. Reopen it using Project → Import project file. Export
+          lets you select multiple views for PNG downloads.
         </p>
         <button class="save-button" (click)="help.set(false)">
           Back to the studio<app-icon name="chevron" />
