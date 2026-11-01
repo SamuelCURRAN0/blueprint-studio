@@ -86,12 +86,12 @@ export class App {
       const saved = this.storage.load();
       this.savedJson = saved ? JSON.stringify(saved) : '';
       const restored = this.storage.load(true);
-      this.state.project.set(restored ?? saved ?? demoProject());
+      this.state.project.set(restored ?? saved ?? emptyProject());
       this.state.activeObjectId.set(this.state.project().objects[0]?.id ?? '');
       this.state.notice.set(
         restored || saved
           ? 'Local project restored. Ready to continue.'
-          : 'Example study loaded. Start a new project or explore the drawing tools.',
+          : 'New project. Add a point to begin your blueprint.',
       );
     } catch (error) {
       this.state.notice.set(`Could not restore local data: ${this.error(error)}`);

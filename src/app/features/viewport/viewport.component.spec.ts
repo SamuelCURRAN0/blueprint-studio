@@ -251,8 +251,8 @@ describe('viewport interactions', () => {
     expect(state.project().objects[0].pointIds).toEqual(['a', 'b', 'c', 'd', 'e']);
   });
   it('changes the whole clicked object’s layer from the menu, aligning to the destination plane with undo', async () => {
-    state.createLayer();
-    const layer = state.activeLayer()!;
+    const layerId = state.createLayer();
+    const layer = state.project().layers.find((l) => l.id === layerId)!;
     state.updateLayer(layer.id, { plane: { axis: 'z', value: 7 } });
     await fixture.whenStable();
     await openContext(260, 60);

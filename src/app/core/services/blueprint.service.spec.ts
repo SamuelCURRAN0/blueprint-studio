@@ -81,13 +81,21 @@ describe('shared blueprint state', () => {
     expect(state.project().points).toHaveLength(6);
     expect(state.project().points.every((p) => p.z === 8)).toBe(true);
   });
-  it('creates a ready-to-use layer as one undo step and aligns geometry reassigned or moved by deleting a layer', () => {
+  it('creates only an empty layer as one undo step, preserves selection, and aligns explicitly assigned objects', () => {
     const a = add();
     state.updateLayer('layer-1', { plane: { axis: 'z', value: 4 } });
-    state.createLayer();
-    const layer = state.activeLayer()!;
+    const objects = state.project().objects;
+    const points = state.project().points;
+    const layerId = state.createLayer();
+    const layer = state.project().layers.find((l) => l.id === layerId)!;
     expect(layer.id).not.toBe('layer-1');
-    expect(state.activeObject()?.pointIds).toEqual([]);
+    expect(state.project().objects).toBe(objects);
+    expect(state.project().points).toBe(points);
+    expect(state.activeObjectId()).toBe('object-1');
+    expect(state.selectedId()).toBe(a);
+    state.activateLayer(layerId);
+    expect(state.project().objects).toBe(objects);
+    expect(state.selectedId()).toBe(a);
     state.undo();
     expect(state.project().layers).toHaveLength(1);
     expect(state.project().objects).toHaveLength(1);
@@ -117,7 +125,7 @@ describe('shared blueprint state', () => {
   it('moves a mixed-layer selection only along shared free axes and skips locked points', () => {
     const a = add();
     state.updateLayer('layer-1', { plane: { axis: 'z', value: 3 } });
-    state.createLayer();
+    state.createObject(state.createLayer());
     const b = add();
     state.selectMany([a, b]);
     state.translateSelection({ x: 2, y: 4, z: 50 });
@@ -146,7 +154,7 @@ describe('shared blueprint state', () => {
   });
   it('protects locked object coordinates when configuring or transferring fixed layers', () => {
     add();
-    state.createLayer();
+    state.createObject(state.createLayer());
     const sourceId = state.activeLayer()!.id;
     const b = add();
     const objectId = state.activeObjectId();
@@ -192,7 +200,7 @@ describe('shared blueprint state', () => {
   });
   it('keeps duplicates in their original objects and ignores locked or hidden selections', () => {
     const a = add();
-    state.createLayer();
+    state.createObject(state.createLayer());
     const layer = state.activeLayer()!.id;
     const b = add();
     state.selectMany([a, b]);
@@ -263,7 +271,7 @@ describe('shared blueprint state', () => {
   it('applies the destination layer plane and releases the source plane when reassigning points', () => {
     const a = add();
     state.updateLayer('layer-1', { plane: { axis: 'z', value: 3 } });
-    state.createLayer();
+    state.createObject(state.createLayer());
     const target = state.activeObjectId();
     const targetLayer = state.activeLayer()!.id;
     state.updateLayer(targetLayer, { plane: { axis: 'y', value: -4 } });
@@ -276,7 +284,7 @@ describe('shared blueprint state', () => {
   });
   it('rejects transfers to missing, locked or hidden objects and layers without a history entry', () => {
     const a = add();
-    state.createLayer();
+    state.createObject(state.createLayer());
     const target = state.activeObjectId();
     const layer = state.activeLayer()!.id;
     state.select(a);

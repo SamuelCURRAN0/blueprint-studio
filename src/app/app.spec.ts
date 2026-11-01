@@ -26,6 +26,48 @@ describe('App', () => {
     const app = fixture.componentInstance;
     expect(app).toBeTruthy();
   });
+  it('starts a first visit with a blank project instead of the kart study', () => {
+    vi.spyOn(ProjectStorageService.prototype, 'load').mockReturnValue(null);
+    const state = TestBed.createComponent(App).componentInstance.state;
+    expect(state.project()).toEqual(emptyProject());
+    expect(state.activeObjectId()).toBe('object-1');
+    expect(state.notice()).toContain('New project');
+  });
+  it.each([false, true])(
+    'restores the last project, preferring recovery when present (%s)',
+    (hasRecovery) => {
+      const saved = { ...emptyProject(), name: 'Saved drawing' };
+      const recovery = {
+        ...emptyProject(),
+        name: 'Work in progress',
+        points: [{ id: 'a', x: 2, y: 3, z: 4 }],
+        objects: [{ ...emptyProject().objects[0], pointIds: ['a'] }],
+      };
+      vi.spyOn(ProjectStorageService.prototype, 'load').mockImplementation((autosave = false) =>
+        autosave ? (hasRecovery ? recovery : null) : saved,
+      );
+      const state = TestBed.createComponent(App).componentInstance.state;
+      expect(state.project()).toEqual(hasRecovery ? recovery : saved);
+      expect(state.notice()).toContain('restored');
+    },
+  );
+  it('creates layers from the Explorer without adding objects', async () => {
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
+    const fixture = TestBed.createComponent(App);
+    const state = fixture.componentInstance.state;
+    state.replaceProject(emptyProject());
+    await fixture.whenStable();
+    const objects = state.project().objects;
+    (
+      fixture.nativeElement.querySelector('[aria-label="Create layer"]') as HTMLButtonElement
+    ).click();
+    await fixture.whenStable();
+    expect(state.project().layers).toHaveLength(2);
+    expect(state.project().objects).toBe(objects);
+    expect(state.activeObjectId()).toBe('object-1');
+    state.undo();
+    expect(state.project()).toEqual(emptyProject());
+  });
   it('changes collection membership through the active object Properties dropdown', async () => {
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
     const fixture = TestBed.createComponent(App);
@@ -153,7 +195,7 @@ describe('App', () => {
       .map((p) => p.id);
     state.createObject();
     const other = state.activeObjectId();
-    state.createLayer();
+    state.createObject(state.createLayer());
     const destination = state.activeObjectId();
     state.updateLayer(state.activeLayer()!.id, { plane: { axis: 'z', value: 7 } });
     state.selectMany(ids);

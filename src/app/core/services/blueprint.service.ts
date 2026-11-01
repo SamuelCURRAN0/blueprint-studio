@@ -918,7 +918,7 @@ export class BlueprintService {
       `${collection.name} removed. Its objects are now Ungrouped. Undo restores the collection.`,
     );
   }
-  createLayer(): void {
+  createLayer(): string {
     this.history.record(this.project());
     const id = this.id('layer');
     this.project.update((p) => ({
@@ -933,19 +933,25 @@ export class BlueprintService {
         },
       ],
     }));
-    this.createObject(id, false);
+    this.cancel();
     this.notice.set(
-      'Layer created with an empty object. Choose its fixed axis in Layers to draw on a plane.',
+      'Empty layer created. Assign an object using Active object → Layer in Properties.',
     );
+    return id;
   }
   activateLayer(id: string): void {
     const layer = this.project().layers.find((l) => l.id === id);
     if (!layer?.visible || layer.locked) return;
     const object = this.project().objects.find((o) => o.layerId === id && o.visible && !o.locked);
+    if (!object) {
+      this.notice.set(
+        `${layer.name} has no visible, unlocked object. Assign an object to it in Properties or create one explicitly.`,
+      );
+      return;
+    }
     this.select(null);
     this.cancel();
-    if (object) this.activeObjectId.set(object.id);
-    else this.createObject(id);
+    this.activeObjectId.set(object.id);
   }
   setLayerAxis(id: string, axis: Axis | ''): void {
     const layer = this.project().layers.find((l) => l.id === id);

@@ -9,7 +9,7 @@ npm install
 npm start
 ```
 
-Open `http://localhost:4200`. A kart chassis study appears on first use. Choose **Project → New project** for a blank drawing. Existing recovery data is restored automatically.
+Open `http://localhost:4200`. First use opens a blank project. Existing recovery data or the last saved project is restored automatically on subsequent visits. **Project → New project** starts another blank drawing; the kart study remains available through **Project → Open kart study**.
 
 ```sh
 npm run build
@@ -58,7 +58,7 @@ Right-click an Explorer object for Move to collection, Change layer, Rename, vis
 
 In **Explorer → Layers**, choose **Keep axis → X fixed, Y fixed or Z fixed**, then enter the shared coordinate once. Enabling it starts from the selected point on that layer, or its first point (the construction depth is used for an empty layer). Existing points align to the chosen value, and new points, coordinate edits and drags keep it. Changing the layer value moves its points to the new plane; choose **Free 3D** to release the constraint. These changes support undo/redo and are saved in project files and recovery copies. Unlock affected objects before changing their coordinates.
 
-Create a layer with **+**; it includes an empty active object ready for drawing. Click a layer's icon to draw on it, or assign an existing object's **Layer** in Properties. Reassigned points follow the destination layer's fixed coordinate. New objects use the active object's layer.
+Create an empty layer with **+**; this does not create an object or change the active object. Assign an existing object's **Layer** in Properties. A layer's icon activates an existing visible, unlocked object on that layer; empty layers prompt you to assign or create an object explicitly. Reassigned points follow the destination layer's fixed coordinate. New objects use the active object's layer.
 
 A fixed layer supplies the missing depth for one-click Add point and Polyline placement: **X fixed → Side**, **Y fixed → Front/Back**, **Z fixed → Top/Bottom**. Other views follow the selected placement method while keeping the layer coordinate. Rectangles use the layer's depth and must be drawn in one of these matching views.
 
