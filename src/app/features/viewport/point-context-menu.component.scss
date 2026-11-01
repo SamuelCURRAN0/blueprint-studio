@@ -1,0 +1,103 @@
+:host {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 12;
+}
+.point-context-menu {
+  position: absolute;
+  pointer-events: auto;
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid #4b575e;
+  border-radius: 6px;
+  background: #282e33;
+  box-shadow: 0 8px 28px #0008;
+  color: #d2dcd9;
+  font-size: 11px;
+}
+.menu-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 5px;
+  font-weight: 600;
+}
+.point-info,
+.menu-hint {
+  margin: 5px;
+  color: #94a5ae;
+  font-size: 10px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 31px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  overflow-wrap: anywhere;
+}
+button:hover:not(:disabled),
+button:focus-visible {
+  background: #3b4c44;
+  outline: 1px solid #83b49c;
+}
+button:disabled {
+  opacity: 0.4;
+}
+.danger {
+  color: #efa8ae;
+}
+button > span:last-child:not(.object-color),
+kbd {
+  margin-left: auto;
+}
+kbd {
+  color: #91a199;
+  font: 9px monospace;
+  white-space: nowrap;
+}
+app-icon {
+  flex-shrink: 0;
+  width: 13px;
+  height: 13px;
+}
+.close-menu {
+  width: 24px;
+  min-height: 24px;
+  padding: 4px;
+  flex-shrink: 0;
+}
+[role='separator'] {
+  height: 1px;
+  background: #465057;
+  margin: 5px;
+}
+.destination {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+.destination b {
+  font-weight: 500;
+}
+.destination small {
+  font-size: 9px;
+  color: #94a5ae;
+}
+.object-color {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}

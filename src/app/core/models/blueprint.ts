@@ -25,12 +25,20 @@ export interface BlueprintObject {
   pointIds: string[];
   edgeIds: string[];
   layerId: string;
+  /** Optional organizational group; independent of construction layers. */
+  collectionId?: string;
+}
+export interface BlueprintCollection {
+  id: string;
+  name: string;
 }
 export interface BlueprintLayer {
   id: string;
   name: string;
   visible: boolean;
   locked: boolean;
+  /** All points owned by this layer share this coordinate. Omit for a free 3D layer. */
+  plane?: { axis: Axis; value: number };
 }
 /** A view-local underlay, positioned in world units and embedded in project files. */
 export interface ReferenceImage {
@@ -54,6 +62,8 @@ export interface BlueprintProject {
   edges: BlueprintEdge[];
   objects: BlueprintObject[];
   layers: BlueprintLayer[];
+  /** Older version-1 projects have no collections and keep objects ungrouped. */
+  collections?: BlueprintCollection[];
   referenceImages?: Partial<Record<ViewType, ReferenceImage>>;
 }
 export interface Projection {

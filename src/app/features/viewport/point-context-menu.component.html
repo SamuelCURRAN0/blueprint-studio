@@ -1,0 +1,144 @@
+<div
+  #menuElement
+  class="point-context-menu"
+  role="menu"
+  aria-label="Point actions"
+  [style.left.px]="layout().left"
+  [style.top.px]="layout().top"
+  [style.width.px]="layout().width"
+  [style.max-height.px]="layout().maxHeight"
+  (keydown)="keydown($event)"
+  (pointerdown)="$event.stopPropagation()"
+  (contextmenu)="$event.preventDefault()"
+>
+  <div class="menu-heading">
+    <span>
+      @if (state.selectedIds().length > 1) {
+        {{ state.selectedIds().length }} points selected
+      } @else if (point()) {
+        Point {{ number() }}
+      } @else {
+        Point actions
+      }
+    </span>
+    <button class="close-menu" aria-label="Close point actions" (click)="close()">
+      <app-icon name="close" />
+    </button>
+  </div>
+  @if (point(); as p) {
+    <p class="point-info">
+      P{{ number() }} · {{ owner()?.name }}<br />X {{ format(p.x) }} · Y {{ format(p.y) }} · Z
+      {{ format(p.z) }}
+    </p>
+  }
+  @switch (page()) {
+    @case ('actions') {
+      @if (choices().length > 1) {
+        <button role="menuitem" aria-haspopup="menu" (click)="page.set('points')">
+          Choose overlapping point <span>{{ choices().length }} ›</span>
+        </button>
+      }
+      <button
+        role="menuitem"
+        class="danger"
+        [disabled]="!state.editableSelection().length"
+        (click)="deleteSelection()"
+      >
+        <app-icon name="delete-point" />{{
+          state.selectedIds().length > 1 ? 'Delete selected points' : 'Delete point'
+        }}<kbd>Del</kbd>
+      </button>
+      <button
+        role="menuitem"
+        [disabled]="!state.editableSelection().length"
+        (click)="duplicateSelection()"
+      >
+        <app-icon name="add" />{{
+          state.selectedIds().length > 1 ? 'Duplicate selected points' : 'Duplicate point'
+        }}<kbd>Ctrl D</kbd>
+      </button>
+      <button
+        role="menuitem"
+        aria-haspopup="menu"
+        [disabled]="!state.pointMoveTargets().length"
+        (click)="page.set('objects')"
+      >
+        <app-icon name="move" />Move to object<span>›</span>
+      </button>
+      <button
+        role="menuitem"
+        aria-haspopup="menu"
+        [disabled]="
+          !owner() || !state.isObjectEditable(owner()!.id) || state.project().layers.length < 2
+        "
+        (click)="page.set('layers')"
+      >
+        <app-icon name="layers" />Change object's layer<span>›</span>
+      </button>
+      <div role="separator"></div>
+      <button role="menuitem" [disabled]="!state.visiblePoints().length" (click)="selectAll()">
+        Select all points<kbd>Ctrl A</kbd>
+      </button>
+      <button role="menuitem" [disabled]="!state.selectedIds().length" (click)="clearSelection()">
+        Clear selection
+      </button>
+      @if (state.editableSelection().length < state.selectedIds().length) {
+        <p class="menu-hint">Locked points stay in place.</p>
+      }
+    }
+    @case ('points') {
+      <button role="menuitem" (click)="page.set('actions')">‹ Back to actions</button>
+      <p class="menu-hint">Choose the exact point at this position.</p>
+      @for (choice of choices(); track choice.point.id) {
+        <button role="menuitem" class="destination" (click)="choosePoint(choice.point.id)">
+          <b>P{{ choice.number }} · {{ choice.owner }}</b>
+          <small
+            >X {{ format(choice.point.x) }} · Y {{ format(choice.point.y) }} · Z
+            {{ format(choice.point.z) }}</small
+          >
+        </button>
+      }
+    }
+    @case ('objects') {
+      <button role="menuitem" (click)="page.set('actions')">‹ Back to actions</button>
+      <p class="menu-hint">
+        Edges between moved points follow. Connections to points left behind are removed.
+      </p>
+      @for (object of state.pointMoveTargets(); track object.id) {
+        <button role="menuitem" (click)="moveToObject(object.id)">
+          <span class="object-color" [style.background]="object.color"></span>{{ object.name }}
+        </button>
+      }
+      <p class="menu-hint">
+        The destination layer's fixed coordinate applies. Undo restores the change.
+      </p>
+    }
+    @case ('layers') {
+      <button role="menuitem" (click)="page.set('actions')">‹ Back to actions</button>
+      <p class="menu-hint">
+        Move the entire object <b>{{ owner()?.name }}</b> to a layer.
+      </p>
+      @for (layer of state.project().layers; track layer.id) {
+        @if (layer.id !== owner()?.layerId) {
+          <button
+            role="menuitem"
+            class="destination"
+            [disabled]="layer.locked"
+            (click)="changeObjectLayer(layer.id)"
+          >
+            <b
+              >{{ layer.name }}{{ !layer.visible ? ' (hidden)' : ''
+              }}{{ layer.locked ? ' (locked)' : '' }}</b
+            >
+            @if (layer.plane; as plane) {
+              <small
+                >Align points to {{ plane.axis.toUpperCase() }} = {{ plane.value }}
+                {{ state.project().units }}</small
+              >
+            }
+          </button>
+        }
+      }
+    }
+  }
+</div>

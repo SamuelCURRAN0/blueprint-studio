@@ -3,6 +3,9 @@ import { ViewportComponent } from './viewport.component';
 import { BlueprintService } from '../../core/services/blueprint.service';
 import { referenceCorners } from '../../core/geometry/reference-image';
 import { worldToScreen } from '../../core/geometry/geometry';
+import { parseProject } from '../../core/services/project-storage.service';
+import { PointContextMenuComponent } from './point-context-menu.component';
+import { By } from '@angular/platform-browser';
 
 describe('viewport interactions', () => {
   let fixture: ComponentFixture<ViewportComponent>;
@@ -165,6 +168,243 @@ describe('viewport interactions', () => {
     canvas.dispatchEvent(event);
     fixture.detectChanges();
   }
+  async function openContext(u: number, v: number): Promise<HTMLElement> {
+    const rect = canvas.getBoundingClientRect();
+    const event = new MouseEvent('contextmenu', {
+      clientX: rect.left + u,
+      clientY: rect.top + v,
+      button: 2,
+      bubbles: true,
+      cancelable: true,
+    });
+    canvas.dispatchEvent(event);
+    await fixture.whenStable();
+    expect(event.defaultPrevented).toBe(true);
+    const menu = fixture.nativeElement.querySelector('[role="menu"]') as HTMLElement;
+    expect(menu).not.toBeNull();
+    return menu;
+  }
+  function menuButton(label: string): HTMLButtonElement {
+    const button = Array.from(
+      fixture.nativeElement.querySelectorAll('[role="menuitem"]') as NodeListOf<HTMLButtonElement>,
+    ).find((button) => button.textContent?.replace(/\s+/g, ' ').trim().startsWith(label));
+    expect(button, `Menu action: ${label}`).toBeDefined();
+    return button!;
+  }
+  it('right-clicks a point without drawing and deletes it with its connections as one undo step', async () => {
+    state.setTool('edge');
+    state.connect('c');
+    state.connect('e');
+    state.setTool('add');
+    state.pending.set({ view: 'front', position: { u: 1, v: 1 } });
+    const before = structuredClone(state.project());
+    await fixture.whenStable();
+    await openContext(260, 60);
+    expect(state.tool()).toBe('select');
+    expect(state.pending()).toBeNull();
+    expect(state.selectedIds()).toEqual(['e']);
+    expect(state.project()).toEqual(before);
+    menuButton('Delete point').click();
+    await fixture.whenStable();
+    expect(state.project().points.some((p) => p.id === 'e')).toBe(false);
+    expect(state.project().edges).toEqual([]);
+    expect(state.pointContextMenu()).toBeNull();
+    expect(document.activeElement).toBe(canvas);
+    state.undo();
+    expect(state.project()).toEqual(before);
+  });
+  it('keeps a right-clicked group selected for duplication and can choose the exact overlapping point for deletion', async () => {
+    state.selectMany(['a', 'c']);
+    await openContext(100, 100);
+    expect(state.selectedIds()).toEqual(['a', 'c']);
+    menuButton('Duplicate selected points').click();
+    await fixture.whenStable();
+    expect(state.project().points).toHaveLength(7);
+    expect(state.selectedIds()).toHaveLength(2);
+    expect(state.selectedIds().every((id) => !['a', 'c'].includes(id))).toBe(true);
+    state.undo();
+    await fixture.whenStable();
+    state.select(null);
+    await openContext(100, 100);
+    menuButton('Choose overlapping point').click();
+    await fixture.whenStable();
+    menuButton('P2').click();
+    await fixture.whenStable();
+    expect(state.selectedIds()).toEqual(['b']);
+    expect(state.pointContextMenu()?.pointId).toBe('b');
+    menuButton('Delete point').click();
+    expect(state.project().points.some((p) => p.id === 'b')).toBe(false);
+    expect(state.project().points.some((p) => p.id === 'a')).toBe(true);
+  });
+  it('moves selected points through the object submenu without changing ownership incorrectly', async () => {
+    state.createObject();
+    const target = state.activeObject()!;
+    state.selectMany(['a', 'c']);
+    await fixture.whenStable();
+    await openContext(100, 100);
+    menuButton('Move to object').click();
+    await fixture.whenStable();
+    menuButton(target.name).click();
+    expect(state.activeObject()?.pointIds).toEqual(['a', 'c']);
+    expect(parseProject(JSON.stringify(state.project()))).toEqual(state.project());
+    state.undo();
+    expect(state.project().objects[0].pointIds).toEqual(['a', 'b', 'c', 'd', 'e']);
+  });
+  it('changes the whole clicked object’s layer from the menu, aligning to the destination plane with undo', async () => {
+    state.createLayer();
+    const layer = state.activeLayer()!;
+    state.updateLayer(layer.id, { plane: { axis: 'z', value: 7 } });
+    await fixture.whenStable();
+    await openContext(260, 60);
+    expect(state.selectedIds()).toEqual(['e']);
+    menuButton("Change object's layer").click();
+    await fixture.whenStable();
+    expect(fixture.nativeElement.querySelector('[role="menu"]').textContent).toContain(
+      'entire object',
+    );
+    menuButton(layer.name).click();
+    expect(state.project().objects[0].layerId).toBe(layer.id);
+    expect(state.project().points.every((p) => p.z === 7)).toBe(true);
+    state.undo();
+    expect(state.project().objects[0].layerId).toBe('layer-1');
+    expect(state.project().points.find((p) => p.id === 'e')?.z).toBe(1);
+  });
+  it('disables editing locked points and offers selection actions on empty space', async () => {
+    state.updateObject('object-1', { locked: true });
+    await fixture.whenStable();
+    await openContext(260, 60);
+    expect(menuButton('Delete point').disabled).toBe(true);
+    expect(menuButton('Duplicate point').disabled).toBe(true);
+    expect(menuButton("Change object's layer").disabled).toBe(true);
+    const before = state.project();
+    menuButton('Delete point').click();
+    expect(state.project()).toBe(before);
+    menuButton('Select all points').click();
+    await fixture.whenStable();
+    expect(state.selectedIds()).toHaveLength(5);
+    await openContext(320, 200);
+    menuButton('Clear selection').click();
+    expect(state.selectedIds()).toEqual([]);
+  });
+  it('supports keyboard navigation, fits small viewports and dismisses on Escape, outside click, zoom and model changes', async () => {
+    viewport.size.set({ width: 220, height: 160 });
+    state.select('e');
+    canvas.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true }),
+    );
+    await fixture.whenStable();
+    const component = fixture.debugElement.query(By.directive(PointContextMenuComponent))
+      .componentInstance as PointContextMenuComponent;
+    expect(component.layout().left + component.layout().width).toBeLessThanOrEqual(212);
+    expect(component.layout().top + component.layout().maxHeight).toBeLessThanOrEqual(152);
+    const duplicate = menuButton('Duplicate point');
+    menuButton('Delete point').focus();
+    document.activeElement!.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }),
+    );
+    expect(document.activeElement).toBe(duplicate);
+    duplicate.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await fixture.whenStable();
+    expect(state.pointContextMenu()).toBeNull();
+    expect(document.activeElement).toBe(canvas);
+    await openContext(100, 100);
+    document.body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }));
+    expect(state.pointContextMenu()).toBeNull();
+    await openContext(100, 100);
+    viewport.zoomAt(40);
+    expect(state.pointContextMenu()).toBeNull();
+    await openContext(100, 100);
+    state.renameProject('Updated');
+    await fixture.whenStable();
+    expect(state.pointContextMenu()).toBeNull();
+  });
+  it('deletes through the advertised keyboard shortcut while the context menu is focused', async () => {
+    await openContext(260, 60);
+    const event = new KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true });
+    menuButton('Delete point').dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(state.project().points.some((p) => p.id === 'e')).toBe(false);
+    expect(state.pointContextMenu()).toBeNull();
+    state.undo();
+    expect(state.project().points.some((p) => p.id === 'e')).toBe(true);
+  });
+  it('toggles multiple points with Shift/Ctrl-click and keeps the group while dragging one selected point', () => {
+    pointer('pointerdown', 100, 100);
+    pointer('pointerup', 100, 100);
+    pointer('pointerdown', 180, 100, { shiftKey: true });
+    expect(state.selectedIds()).toEqual(['a', 'c']);
+    pointer('pointerdown', 100, 100);
+    pointer('pointermove', 120, 80);
+    pointer('pointermove', 140, 60);
+    pointer('pointerup', 140, 60);
+    expect(state.selectedIds()).toEqual(['a', 'c']);
+    expect(state.project().points.find((p) => p.id === 'a')).toMatchObject({ x: 1, y: 1, z: 1 });
+    expect(state.project().points.find((p) => p.id === 'c')).toMatchObject({ x: 3, y: 1, z: 1 });
+    state.undo();
+    expect(state.project().points.find((p) => p.id === 'a')?.x).toBe(0);
+    expect(state.project().points.find((p) => p.id === 'c')?.x).toBe(2);
+    expect(state.history.canUndo()).toBe(false);
+    pointer('pointerdown', 180, 100, { ctrlKey: true });
+    expect(state.selectedIds()).toEqual(['a']);
+  });
+  it('box-selects projected points in either direction, including overlapping points, with additive selection', () => {
+    state.select('e');
+    pointer('pointerdown', 200, 120, { shiftKey: true });
+    pointer('pointermove', 80, 80, { shiftKey: true });
+    expect(viewport.scene().selectionBox).toEqual({ a: { u: 200, v: 120 }, b: { u: 80, v: 80 } });
+    expect(state.selectedIds()).toEqual(['e', 'a', 'b', 'c', 'd']);
+    pointer('pointerup', 80, 80);
+    expect(viewport.scene().selectionBox).toBeNull();
+    pointer('pointerdown', 200, 120);
+    pointer('pointermove', 150, 80);
+    pointer('pointerup', 150, 80);
+    expect(state.selectedIds()).toEqual(['c', 'd']);
+    expect(state.history.canUndo()).toBe(false);
+  });
+  it('drags duplicated points rather than the overlapping originals', () => {
+    state.selectMany(['a', 'c']);
+    state.duplicateSelected();
+    const copies = state.selectedIds();
+    pointer('pointerdown', 100, 100);
+    pointer('pointermove', 140, 60);
+    pointer('pointerup', 140, 60);
+    expect(state.selectedIds()).toEqual(copies);
+    expect(state.project().points.find((p) => p.id === 'a')?.x).toBe(0);
+    expect(state.project().points.find((p) => p.id === copies[0])).toMatchObject({ x: 1, z: 1 });
+    expect(state.project().points.find((p) => p.id === copies[1])).toMatchObject({ x: 3, z: 1 });
+  });
+  it('restores the previous selection when a box selection is cancelled', () => {
+    state.select('e');
+    pointer('pointerdown', 200, 120);
+    pointer('pointermove', 80, 80);
+    expect(state.selectedIds()).toEqual(['a', 'b', 'c', 'd']);
+    canvas.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(state.selectedIds()).toEqual(['e']);
+    expect(viewport.selectionBox()).toBeNull();
+  });
+  it('moves a group in mirrored Bottom coordinates and cancels the whole drag with Escape', () => {
+    fixture.componentRef.setInput('view', 'top');
+    state.topFacing.set('bottom');
+    state.selectMany(['a', 'c']);
+    pointer('pointerdown', 100, 60);
+    pointer('pointermove', 140, 20);
+    expect(state.project().points.find((p) => p.id === 'a')).toMatchObject({ x: -1, y: 2, z: 0 });
+    expect(state.project().points.find((p) => p.id === 'c')).toMatchObject({ x: 1, y: 2, z: 0 });
+    canvas.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(state.project().points.find((p) => p.id === 'a')).toMatchObject({ x: 0, y: 1, z: 0 });
+    expect(state.project().points.find((p) => p.id === 'c')).toMatchObject({ x: 2, y: 1, z: 0 });
+    expect(state.history.canUndo()).toBe(false);
+  });
+  it('does not record a drag that only tries to move a fixed coordinate', () => {
+    state.updateLayer('layer-1', { plane: { axis: 'z', value: 0 } });
+    state.history.clear();
+    state.selectMany(['a', 'c']);
+    pointer('pointerdown', 100, 100);
+    pointer('pointermove', 100, 20);
+    pointer('pointerup', 100, 20);
+    expect(state.history.canUndo()).toBe(false);
+    expect(state.project().points.every((p) => p.z === 0)).toBe(true);
+  });
   it.each([0, 1, 2, 3])(
     'resizes from corner %s, preserves the opposite corner and records one undo step',
     async (corner) => {
@@ -395,7 +635,7 @@ describe('viewport interactions', () => {
 
   it('previews a chosen candidate without changing selection and navigates choices with the keyboard', async () => {
     state.setTool('edge');
-    state.selectedId.set('e');
+    state.select('e');
     clickAt(100, 100);
     await fixture.whenStable();
     const buttons = fixture.nativeElement.querySelectorAll(

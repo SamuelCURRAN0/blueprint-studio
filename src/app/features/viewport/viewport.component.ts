@@ -15,6 +15,7 @@ import {
 } from '@angular/core';
 import { BlueprintService } from '../../core/services/blueprint.service';
 import {
+  AXIS_COLORS,
   Position,
   ReferenceImage,
   ViewportTransform,
@@ -32,6 +33,7 @@ import {
 } from '../../core/geometry/geometry';
 import { format, RenderScene, renderViewport } from './viewport-renderer';
 import { IconComponent } from '../../shared/icon.component';
+import { PointContextMenuComponent } from './point-context-menu.component';
 import {
   containsReference,
   referenceCorners,
@@ -40,7 +42,7 @@ import {
 
 @Component({
   selector: 'app-viewport',
-  imports: [IconComponent],
+  imports: [IconComponent, PointContextMenuComponent],
   templateUrl: './viewport.component.html',
   styleUrl: './viewport.component.scss',
 })
@@ -73,12 +75,15 @@ export class ViewportComponent implements AfterViewInit, OnDestroy {
   readonly facingChanged = output<ViewType>();
   private readonly facingTransforms = new Map<ViewType, ViewportTransform>();
   readonly title = computed(() => `${this.view()[0].toUpperCase()}${this.view().slice(1)} view`);
+  readonly axisLabels = computed(() =>
+    VIEW_AXES[this.view()].map((axis, index) => ({
+      label: (index === 0 && VIEW_HORIZONTAL_SIGN[this.view()] < 0 ? '−' : '') + axis.toUpperCase(),
+      color: AXIS_COLORS[axis],
+    })),
+  );
   readonly axes = computed(() =>
-    VIEW_AXES[this.view()]
-      .map(
-        (axis, index) =>
-          (index === 0 && VIEW_HORIZONTAL_SIGN[this.view()] < 0 ? '−' : '') + axis.toUpperCase(),
-      )
+    this.axisLabels()
+      .map((axis) => axis.label)
       .join(' / '),
   );
   readonly canvas = viewChild.required<ElementRef<HTMLCanvasElement>>('canvas');
@@ -92,6 +97,7 @@ export class ViewportComponent implements AfterViewInit, OnDestroy {
     return { length, pixels: length * scale };
   });
   readonly hover = signal<Position | null>(null);
+  readonly selectionBox = signal<{ a: Position; b: Position } | null>(null);
   readonly tooltip = signal('');
   readonly draggingReference = signal(false);
   readonly referenceResizeCursor = signal<string | null>(null);
@@ -101,6 +107,10 @@ export class ViewportComponent implements AfterViewInit, OnDestroy {
   readonly pointPicker = computed(() => {
     const picker = this.state.pointPicker();
     return picker?.view === this.view() ? picker : null;
+  });
+  readonly pointContextMenu = computed(() => {
+    const menu = this.state.pointContextMenu();
+    return menu?.view === this.view() ? menu : null;
   });
   readonly pointChoices = computed(() => {
     const project = this.state.project();
@@ -151,7 +161,7 @@ export class ViewportComponent implements AfterViewInit, OnDestroy {
   private initialized = false;
   private frame = 0;
   private drag: {
-    kind: 'pan' | 'point' | 'reference' | 'reference-resize';
+    kind: 'pan' | 'point' | 'box' | 'reference' | 'reference-resize';
     pointer: number;
     start: Position;
     transform: ViewportTransform;
@@ -160,13 +170,15 @@ export class ViewportComponent implements AfterViewInit, OnDestroy {
     recorded?: boolean;
     reference?: ReferenceImage;
     resizeCorner?: number;
+    selection?: string[];
+    selectionBefore?: string[];
   } | null = null;
   constructor() {
     effect(() => {
       this.state.project();
       this.view();
       this.state.visiblePoints();
-      this.state.selectedId();
+      this.state.selectedIds();
       this.state.highlightedId();
       this.state.pending();
       this.state.preview();
@@ -176,6 +188,7 @@ export class ViewportComponent implements AfterViewInit, OnDestroy {
       this.transform();
       this.size();
       this.hover();
+      this.selectionBox();
       this.state.rectangle();
       this.state.measurement();
       this.state.chainId();
@@ -247,6 +260,7 @@ export class ViewportComponent implements AfterViewInit, OnDestroy {
   }
   ngOnDestroy(): void {
     if (this.pointPicker()) this.state.dismissPointPicker();
+    if (this.pointContextMenu()) this.state.dismissPointContextMenu();
     this.resize?.disconnect();
     cancelAnimationFrame(this.frame);
   }
@@ -270,6 +284,8 @@ export class ViewportComponent implements AfterViewInit, OnDestroy {
       gridSize: this.state.gridSize(),
       labels: this.state.showLabels(),
       selectedId: this.state.highlightedId() ?? this.state.selectedId(),
+      selectedIds: this.state.selectedIds(),
+      selectionBox: this.selectionBox(),
       pending: this.state.pending(),
       preview: this.state.preview(),
       cursor,
@@ -295,7 +311,7 @@ export class ViewportComponent implements AfterViewInit, OnDestroy {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     renderViewport(ctx, this.scene());
   }
-  private screen(event: PointerEvent | WheelEvent): Position {
+  private screen(event: MouseEvent): Position {
     const rect = this.canvas().nativeElement.getBoundingClientRect();
     return { u: event.clientX - rect.left, v: event.clientY - rect.top };
   }
@@ -344,7 +360,12 @@ export class ViewportComponent implements AfterViewInit, OnDestroy {
         return { id: point.id, distance: Math.hypot(position.u - p.u, position.v - p.v) };
       })
       .filter((hit) => hit.distance < 10)
-      .sort((a, b) => a.distance - b.distance)
+      .sort(
+        (a, b) =>
+          a.distance - b.distance ||
+          Number(this.state.selectedIds().includes(b.id)) -
+            Number(this.state.selectedIds().includes(a.id)),
+      )
       .map((hit) => hit.id);
   }
   choosePoint(id: string): void {
@@ -385,16 +406,41 @@ export class ViewportComponent implements AfterViewInit, OnDestroy {
   @HostListener('document:pointerdown', ['$event'])
   outsidePointPicker(event: PointerEvent): void {
     if (
+      this.pointContextMenu() &&
+      !(event.target instanceof Element && event.target.closest('app-point-context-menu'))
+    )
+      this.state.dismissPointContextMenu();
+    if (
       this.pointPicker() &&
       event.target !== this.canvas().nativeElement &&
       !(event.target instanceof Element && event.target.closest('.point-picker'))
     )
       this.state.dismissPointPicker();
   }
+  focusCanvas(): void {
+    this.canvas().nativeElement.focus();
+  }
+  openPointContextMenu(event: MouseEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    if (this.drag) return;
+    const position = this.screen(event);
+    this.showPointContextMenu(position, this.hitPoints(position));
+  }
+  private showPointContextMenu(position: Position, pointIds: string[]): void {
+    this.state.setTool('select');
+    this.state.activeView.set(this.view());
+    this.state.zoom.set((this.transform().scale / 40) * 100);
+    const pointId = pointIds.at(0) ?? null;
+    if (pointId && !this.state.selectedIds().includes(pointId)) this.state.select(pointId);
+    this.tooltip.set('');
+    this.state.pointContextMenu.set({ view: this.view(), position, pointId, pointIds });
+  }
   pointerDown(event: PointerEvent): void {
     if (this.drag) return;
     if (event.button !== 0 && event.button !== 1) return;
     event.preventDefault();
+    this.state.dismissPointContextMenu();
     this.state.dismissPointPicker();
     this.state.activeView.set(this.view());
     this.state.zoom.set((this.transform().scale / 40) * 100);
@@ -466,7 +512,27 @@ export class ViewportComponent implements AfterViewInit, OnDestroy {
         this.state.addClick(this.view(), this.position(event));
       return;
     }
-    this.state.select(id);
+    const additive = event.shiftKey || event.ctrlKey || event.metaKey;
+    if (additive && id) {
+      this.state.select(id, true);
+      return;
+    }
+    if (!id) {
+      const selectionBefore = this.state.selectedIds();
+      const selection = additive ? selectionBefore : [];
+      if (!additive) this.state.select(null);
+      this.drag = {
+        kind: 'box',
+        pointer: event.pointerId,
+        start: screen,
+        transform: this.transform(),
+        selection,
+        selectionBefore,
+      };
+      this.canvas().nativeElement.setPointerCapture(event.pointerId);
+      return;
+    }
+    if (!this.state.selectedIds().includes(id)) this.state.select(id);
     if (id && this.state.isEditable(id)) {
       const point = this.state.project().points.find((p) => p.id === id)!;
       const projected = projectPoint(point, this.view()),
@@ -484,6 +550,27 @@ export class ViewportComponent implements AfterViewInit, OnDestroy {
   }
   pointerMove(event: PointerEvent): void {
     if (this.drag && this.drag.pointer !== event.pointerId) return;
+    if (this.drag?.kind === 'box') {
+      const screen = this.screen(event),
+        start = this.drag.start;
+      if (Math.hypot(screen.u - start.u, screen.v - start.v) >= 3) {
+        this.selectionBox.set({ a: start, b: screen });
+        const ids = this.state
+          .visiblePoints()
+          .filter((point) => {
+            const p = worldToScreen(projectPoint(point, this.view()), this.transform());
+            return (
+              p.u >= Math.min(start.u, screen.u) &&
+              p.u <= Math.max(start.u, screen.u) &&
+              p.v >= Math.min(start.v, screen.v) &&
+              p.v <= Math.max(start.v, screen.v)
+            );
+          })
+          .map((point) => point.id);
+        this.state.selectMany([...(this.drag.selection ?? []), ...ids]);
+      }
+      return;
+    }
     if (this.drag?.kind === 'reference' || this.drag?.kind === 'reference-resize') {
       if (this.state.tool() !== 'move-reference' || !this.referenceMovable()) {
         this.pointerUp(event);
@@ -551,18 +638,19 @@ export class ViewportComponent implements AfterViewInit, OnDestroy {
         Math.hypot(screen.u - this.drag.start.u, screen.v - this.drag.start.v) < 3
       )
         return;
-      if (!this.drag.recorded) {
-        this.state.history.record(this.state.project());
-        this.drag.recorded = true;
-      }
       const world = screenToWorld(screen, this.transform());
       const offset = this.drag.offset ?? { u: 0, v: 0 };
       const target = { u: world.u + offset.u, v: world.v + offset.v };
-      this.state.move(
+      const before = this.state.project();
+      const moved = this.state.move(
         this.drag.id,
         this.view(),
         this.state.snap() ? snapToGrid(target, this.state.gridSize()) : target,
       );
+      if (moved && !this.drag.recorded) {
+        this.state.history.record(before);
+        this.drag.recorded = true;
+      }
     }
   }
   pointerUp(event: PointerEvent): void {
@@ -571,6 +659,7 @@ export class ViewportComponent implements AfterViewInit, OnDestroy {
   private finishDrag(pointer: number): void {
     if (this.drag && this.drag.pointer !== pointer) return;
     this.drag = null;
+    this.selectionBox.set(null);
     this.draggingReference.set(false);
     this.referenceResizeCursor.set(null);
     if (this.canvas().nativeElement.hasPointerCapture(pointer))
@@ -615,6 +704,30 @@ export class ViewportComponent implements AfterViewInit, OnDestroy {
     this.state.notice.set(`${this.title()}. Each side has its own reference image and settings.`);
   }
   canvasKeydown(event: KeyboardEvent): void {
+    if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (this.drag) return;
+      const point = this.state.selected();
+      this.showPointContextMenu(
+        point
+          ? worldToScreen(projectPoint(point, this.view()), this.transform())
+          : { u: this.size().width / 2, v: this.size().height / 2 },
+        point ? [point.id] : [],
+      );
+      return;
+    }
+    if (this.drag?.kind === 'point' || this.drag?.kind === 'box') {
+      if (event.key === 'Escape') {
+        const drag = this.drag;
+        this.finishDrag(drag.pointer);
+        if (drag.kind === 'point' && drag.recorded) this.state.undo();
+        if (drag.kind === 'box') this.state.selectMany(drag.selectionBefore ?? []);
+        event.preventDefault();
+        event.stopPropagation();
+      } else if (event.ctrlKey || event.metaKey) this.finishDrag(this.drag.pointer);
+      return;
+    }
     if (this.state.tool() !== 'move-reference') return;
     if (this.drag?.kind === 'reference' || this.drag?.kind === 'reference-resize') {
       if (event.key === 'Escape') {
@@ -656,6 +769,7 @@ export class ViewportComponent implements AfterViewInit, OnDestroy {
   }
   zoomAt(scale: number, anchor = { u: this.size().width / 2, v: this.size().height / 2 }): void {
     this.state.dismissPointPicker();
+    this.state.dismissPointContextMenu();
     scale = Math.max(1e-7, Math.min(1e6, scale));
     const p = screenToWorld(anchor, this.transform());
     this.transform.set({ scale, panX: anchor.u - p.u * scale, panY: anchor.v + p.v * scale });
@@ -665,6 +779,7 @@ export class ViewportComponent implements AfterViewInit, OnDestroy {
   }
   reset(): void {
     this.state.dismissPointPicker();
+    this.state.dismissPointContextMenu();
     const { width, height } = this.size();
     this.transform.set({ scale: 40, panX: width / 2, panY: height / 2 });
     this.updateZoomStatus();
@@ -672,6 +787,7 @@ export class ViewportComponent implements AfterViewInit, OnDestroy {
   }
   fit(): void {
     this.state.dismissPointPicker();
+    this.state.dismissPointContextMenu();
     const points = this.state.visiblePoints().map((p) => projectPoint(p, this.view()));
     const reference = this.state.project().referenceImages?.[this.view()];
     if (reference?.visible) points.push(...referenceCorners(reference));

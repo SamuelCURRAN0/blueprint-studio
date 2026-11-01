@@ -222,39 +222,7 @@
           </button>
         </div>
       </div>
-      <div class="scene-heading">
-        <app-icon name="chevron" /><app-icon name="cube" /><span>Scene collection</span
-        ><span class="count">{{ state.project().objects.length }}</span>
-      </div>
-      <div class="object-list">
-        @for (object of state.project().objects; track object.id) {
-          <div class="object-row" [class.active]="state.activeObjectId() === object.id">
-            <button
-              class="object-select"
-              (click)="state.activeObjectId.set(object.id); state.cancel()"
-            >
-              <span class="object-color" [style.background]="object.color"></span
-              ><app-icon name="cube" /><span>{{ object.name }}</span></button
-            ><button
-              class="small-icon"
-              [attr.aria-label]="(object.visible ? 'Hide ' : 'Show ') + object.name"
-              (click)="state.updateObject(object.id, { visible: !object.visible })"
-            >
-              <app-icon [name]="object.visible ? 'eye' : 'hidden'" /></button
-            ><button
-              class="small-icon"
-              [class.locked]="object.locked"
-              [attr.aria-label]="(object.locked ? 'Unlock ' : 'Lock ') + object.name"
-              (click)="state.updateObject(object.id, { locked: !object.locked })"
-            >
-              <app-icon [name]="object.locked ? 'lock' : 'unlock'" />
-            </button>
-          </div>
-        }
-      </div>
-      <button class="add-object" (click)="state.createObject()">
-        <app-icon name="add" />Add object
-      </button>
+      <app-scene-explorer />
       <div class="layer-section">
         <div class="panel-heading">
           <span>LAYERS</span
@@ -269,7 +237,16 @@
         </div>
         @for (layer of state.project().layers; track layer.id) {
           <div class="layer-row">
-            <app-icon name="layers" /><input
+            <button
+              class="small-icon"
+              [class.layer-active]="state.activeLayer()?.id === layer.id"
+              [attr.aria-label]="'Draw on layer ' + layer.name"
+              title="Draw on this layer"
+              [disabled]="!layer.visible || layer.locked"
+              (click)="state.activateLayer(layer.id)"
+            >
+              <app-icon name="layers" /></button
+            ><input
               aria-label="Layer name"
               [ngModel]="layer.name"
               (ngModelChange)="state.updateLayer(layer.id, { name: $event })"
@@ -295,6 +272,47 @@
             >
               <app-icon name="close" />
             </button>
+          </div>
+          <div class="layer-plane-controls">
+            <label [for]="'layer-axis-' + layer.id">Keep axis</label>
+            <select
+              [id]="'layer-axis-' + layer.id"
+              [attr.aria-label]="'Fixed axis for ' + layer.name"
+              [ngModel]="layer.plane?.axis ?? ''"
+              (ngModelChange)="state.setLayerAxis(layer.id, $event)"
+              [disabled]="layer.locked"
+            >
+              <option value="">Free 3D</option>
+              @for (axis of axes; track axis) {
+                <option [value]="axis">{{ axis.toUpperCase() }} fixed</option>
+              }
+            </select>
+            @if (layer.plane; as plane) {
+              <label class="layer-plane-value"
+                ><b [class]="plane.axis">{{ plane.axis.toUpperCase() }}</b>
+                <input
+                  type="number"
+                  min="-1000000000"
+                  max="1000000000"
+                  [step]="state.gridSize()"
+                  [attr.aria-label]="'Fixed coordinate for ' + layer.name"
+                  [ngModel]="plane.value"
+                  [ngModelOptions]="{ updateOn: 'blur' }"
+                  (ngModelChange)="state.setLayerValue(layer.id, $event)"
+                  [disabled]="layer.locked"
+                /><span>{{ state.project().units }}</span>
+              </label>
+              <p>
+                One-click points in
+                {{
+                  plane.axis === 'x'
+                    ? 'Side'
+                    : plane.axis === 'y'
+                      ? 'Front / Back'
+                      : 'Top / Bottom'
+                }}.
+              </p>
+            }
           </div>
         }
       </div>
@@ -603,11 +621,86 @@
           <app-icon name="point" />
           <h2>Point transform</h2>
         </div>
+        <div class="selection-actions">
+          <button
+            class="reference-action"
+            aria-label="Select all points"
+            title="Select all visible points (Ctrl+A)"
+            [disabled]="!state.visiblePoints().length"
+            (click)="state.selectAll()"
+          >
+            Select all points
+          </button>
+          <button
+            class="reference-action danger"
+            aria-label="Delete selected points"
+            title="Delete selected unlocked points (Delete)"
+            [disabled]="!state.editableSelection().length"
+            (click)="state.deleteSelected()"
+          >
+            Delete selected
+          </button>
+        </div>
+        <p class="field-help">
+          Ctrl+A, then Delete clears visible, unlocked points. Show and unlock all objects and
+          layers to clear every point.
+        </p>
         @if (state.selected(); as point) {
           <div class="selection-name">
-            <span class="selection-dot"></span>Point {{ state.project().points.indexOf(point) + 1
-            }}<span class="tiny-tag">3D POINT</span>
+            <span class="selection-dot"></span>
+            @if (state.selectedIds().length > 1) {
+              {{ state.selectedIds().length }} points selected
+            } @else {
+              Point {{ state.project().points.indexOf(point) + 1 }}
+            }
           </div>
+          <button
+            class="reference-action"
+            [disabled]="!state.editableSelection().length"
+            title="Duplicate selected points and their connecting edges (Ctrl+D)"
+            (click)="state.duplicateSelected()"
+          >
+            Duplicate selected <kbd>Ctrl D</kbd>
+          </button>
+          <label class="field-label" for="point-destination">MOVE SELECTED POINTS TO OBJECT</label>
+          <select
+            id="point-destination"
+            aria-label="Destination object"
+            [ngModel]="pointMoveTarget()?.id ?? ''"
+            (ngModelChange)="moveObjectId.set($event)"
+            [disabled]="!pointMoveTargets().length"
+          >
+            @if (!pointMoveTargets().length) {
+              <option value="">No other unlocked object</option>
+            }
+            @for (object of pointMoveTargets(); track object.id) {
+              <option [value]="object.id">{{ object.name }}</option>
+            }
+          </select>
+          <button
+            class="reference-action"
+            aria-label="Move selected points to object"
+            [disabled]="!pointMoveTarget()"
+            (click)="state.moveSelectedToObject(pointMoveTarget()!.id)"
+          >
+            Move to object
+          </button>
+          <p class="field-help">
+            Unlocked points move with edges between them. Connections to points left behind are
+            removed. Undo restores the change.
+          </p>
+          @if (pointMoveLayer()?.plane; as plane) {
+            <p class="field-help">
+              Destination layer keeps {{ plane.axis.toUpperCase() }} = {{ plane.value }}
+              {{ state.project().units }}. Moved points align to it.
+            </p>
+          }
+          @if (state.selectedIds().length > 1) {
+            <p class="field-help">
+              Coordinates of Point {{ state.project().points.indexOf(point) + 1 }}. Editing a value
+              moves the editable selection by the same amount. Fixed axes stay in place.
+            </p>
+          }
           <label class="field-label"
             >POSITION <span>{{ state.project().units }}</span></label
           >
@@ -623,10 +716,14 @@
                 [ngModel]="point[axis]"
                 [ngModelOptions]="{ updateOn: 'blur' }"
                 (ngModelChange)="state.setCoordinate(axis, $event)"
-                [disabled]="!state.isEditable(point.id)"
+                [disabled]="!state.isEditable(point.id) || state.selectionAxisFixed(axis)"
               /><span>{{ state.project().units }}</span></label
             >
           }
+          <p class="field-help">
+            Shift-click to add or remove points. Drag empty space to box-select. Drag a selected
+            point to move the group. Ctrl+A selects all visible points.
+          </p>
         } @else {
           <div class="no-selection">
             <app-icon name="select" />
@@ -650,6 +747,15 @@
             <option value="two-views">Two views · 3D point</option>
             <option value="plane">One view · construction depth</option>
           </select>
+          @if (state.activeLayer()?.plane; as plane) {
+            <p class="field-help">
+              Layer keeps {{ plane.axis.toUpperCase() }} = {{ plane.value }}
+              {{ state.project().units }}. One-click placement in
+              {{
+                plane.axis === 'x' ? 'Side' : plane.axis === 'y' ? 'Front / Back' : 'Top / Bottom'
+              }}; other views follow the chosen method.
+            </p>
+          }
         </div>
       }
       @if (
@@ -667,13 +773,18 @@
             ><input
               aria-label="Construction plane depth"
               type="number"
-              [ngModel]="state.planeDepth()"
+              [ngModel]="constructionDepth()"
+              [disabled]="constructionPlaneFixed()"
               (ngModelChange)="state.planeDepth.set(+$event)"
             /><span>{{ state.project().units }}</span></label
           >
           <p class="field-help">
-            The active view's hidden axis is fixed to this value. Choose the depth before placing
-            geometry.
+            @if (constructionPlaneFixed()) {
+              This depth follows the layer's fixed coordinate. Edit it in Layers.
+            } @else {
+              The active view's hidden axis is fixed to this value. Choose the depth before placing
+              geometry.
+            }
           </p>
         </div>
       }
@@ -704,6 +815,18 @@
               (ngModelChange)="state.updateObject(object.id, { name: $event })"
             />
           </div>
+          <label class="field-label" for="object-collection">COLLECTION</label>
+          <select
+            id="object-collection"
+            aria-label="Object collection"
+            [ngModel]="object.collectionId ?? ''"
+            (ngModelChange)="state.moveObjectToCollection(object.id, $event || null)"
+          >
+            <option value="">Ungrouped</option>
+            @for (collection of state.project().collections ?? []; track collection.id) {
+              <option [value]="collection.id">{{ collection.name }}</option>
+            }
+          </select>
           <label class="field-label">LAYER</label
           ><select
             aria-label="Object layer"
@@ -833,10 +956,45 @@
           Use the properties panel for exact values. Edges follow their points.
         </p>
         <p>
+          <b>Layers:</b> choose a fixed X, Y or Z in Explorer and set its value once. Existing and
+          new points on that layer keep this coordinate. New layers include an empty object; use the
+          layer icon to draw on a layer, or assign an object's layer in Properties. Choosing Free 3D
+          releases the constraint.
+        </p>
+        <p>
+          <b>Multiple points:</b> Shift-click to add or remove points, or drag a box over empty
+          space. Drag any selected point to move the group. Fixed axes constrain the whole group's
+          movement; locked points stay in place. <b>Ctrl+D</b> duplicates editable selected points
+          and the edges between them in place, ready to drag. <b>Ctrl+A</b> selects visible points;
+          Delete removes editable selected points.
+        </p>
+        <p>
           Use <b>Reference</b> to add an image to Front, Side or Top. Adjust its width, center and
           opacity, then choose <b>Place points on image</b> for single-click tracing at the
           construction depth. Turn off Snap to follow the image freely, or use two-view placement to
           define depth from another reference.
+        </p>
+        <p>
+          Use <b>Select all points</b> and <b>Delete selected</b> in Point transform to clear the
+          drawing. Show and unlock all objects and layers to include every point. To reassign part
+          of a drawing, select its points, choose a destination object and click
+          <b>Move to object</b>. Edges between moved points follow; connections to points left
+          behind are removed. The destination layer's fixed coordinate applies.
+        </p>
+        <p>
+          Right-click a point for <b>Delete</b>, <b>Duplicate</b>, <b>Move to object</b> or
+          <b>Change object's layer</b>. Right-click a selected point to act on the group. Use
+          <b>Choose overlapping point</b> to pick an exact point when projections overlap. Changing
+          an object's layer moves its entire geometry. You can also select its name in Explorer and
+          use <b>Active object → Layer</b> in Properties.
+        </p>
+        <p>
+          <b>Collections</b> organize objects in Explorer. Drag an object's name onto a collection,
+          or onto <b>Ungrouped</b> to take it out. Use <b>Add collection</b>, then right-click an
+          object and choose <b>Move to collection</b>, or use <b>Active object → Collection</b> in
+          Properties. Right-click a collection to add objects, rename it or remove the collection
+          while keeping its objects. Collections organize the scene; layers control fixed
+          coordinates.
         </p>
         <div class="shortcut-list">
           @for (tool of tools; track tool.id) {

@@ -1,0 +1,255 @@
+<section
+  #tree
+  tabindex="-1"
+  aria-label="Objects and collections"
+  (contextmenu)="openContext($event, { kind: 'scene', id: '' })"
+  (keydown)="contextKeydown($event, { kind: 'scene', id: '' })"
+>
+  <div class="scene-heading">
+    <app-icon name="folder" /><span>Scene</span
+    ><span class="count">{{ state.project().objects.length }} objects</span>
+  </div>
+  <div class="collection-tree">
+    @for (group of groups(); track group.collection.id) {
+      @let collection = group.collection;
+      <div
+        class="collection-group"
+        [attr.data-drop-collection-id]="collection.id"
+        [class.drop-target]="dropTarget() === collection.id"
+        (dragover)="dragOverCollection($event, collection.id)"
+        (dragleave)="leaveDropTarget($event, collection.id)"
+        (drop)="dropOnCollection($event, collection.id)"
+      >
+        <div
+          class="collection-row"
+          [attr.data-collection-id]="collection.id"
+          (contextmenu)="openContext($event, { kind: 'collection', id: collection.id })"
+          (keydown)="contextKeydown($event, { kind: 'collection', id: collection.id })"
+        >
+          <button
+            class="small-icon collection-toggle"
+            [class.expanded]="!collapsed().has(collection.id)"
+            [attr.aria-label]="'Toggle collection ' + collection.name"
+            [attr.aria-expanded]="!collapsed().has(collection.id)"
+            (click)="toggleCollection(collection.id)"
+          >
+            <app-icon name="chevron" />
+          </button>
+          <app-icon name="folder" />
+          @if (renaming()?.kind === 'collection' && renaming()?.id === collection.id) {
+            <input
+              data-rename
+              aria-label="Collection name"
+              [value]="collection.name"
+              maxlength="120"
+              (blur)="
+                finishRename({ kind: 'collection', id: collection.id }, $any($event.target).value)
+              "
+              (keydown)="renameKeydown($event, { kind: 'collection', id: collection.id })"
+            />
+          } @else {
+            <button class="collection-name" (click)="toggleCollection(collection.id)">
+              {{ collection.name }}
+            </button>
+          }
+          <span class="count">{{ group.objects.length }}</span>
+          <button
+            class="small-icon"
+            [attr.aria-label]="'Add object to ' + collection.name"
+            title="Add object to collection"
+            (click)="addObject(collection.id)"
+          >
+            <app-icon name="add" />
+          </button>
+        </div>
+        @if (!collapsed().has(collection.id)) {
+          <div class="collection-objects">
+            @for (object of group.objects; track object.id) {
+              <ng-container
+                [ngTemplateOutlet]="objectRow"
+                [ngTemplateOutletContext]="{ $implicit: object }"
+              />
+            }
+            @if (!group.objects.length) {
+              <p class="empty-collection">No objects. Use + or move an object here.</p>
+            }
+          </div>
+        }
+      </div>
+    }
+    @if (ungrouped().length || !groups().length || draggingObjectId()) {
+      <div
+        class="ungrouped-group"
+        data-drop-ungrouped
+        [class.drop-target]="dropTarget() === null"
+        (dragover)="dragOverCollection($event, null)"
+        (dragleave)="leaveDropTarget($event, null)"
+        (drop)="dropOnCollection($event, null)"
+      >
+        @if (groups().length) {
+          <div class="ungrouped-heading">Ungrouped</div>
+        }
+        @for (object of ungrouped(); track object.id) {
+          <ng-container
+            [ngTemplateOutlet]="objectRow"
+            [ngTemplateOutletContext]="{ $implicit: object }"
+          />
+        }
+      </div>
+    }
+  </div>
+  @if (draggingObjectId()) {
+    <p class="drop-hint" role="status">Drop on a collection or Ungrouped.</p>
+  }
+  <div class="explorer-actions">
+    <button class="add-object" (click)="state.createObject()">
+      <app-icon name="add" />Add object
+    </button>
+    <button class="add-object" aria-label="Create collection" (click)="addCollection()">
+      <app-icon name="folder" />Add collection
+    </button>
+  </div>
+</section>
+<ng-template #objectRow let-object>
+  <div
+    class="object-row"
+    [class.active]="state.activeObjectId() === object.id"
+    [class.dragging]="draggingObjectId() === object.id"
+    [attr.data-object-id]="object.id"
+    (contextmenu)="openContext($event, { kind: 'object', id: object.id })"
+    (keydown)="contextKeydown($event, { kind: 'object', id: object.id })"
+  >
+    @if (renaming()?.kind === 'object' && renaming()?.id === object.id) {
+      <input
+        data-rename
+        class="object-rename"
+        aria-label="Rename object"
+        [value]="object.name"
+        maxlength="120"
+        (blur)="finishRename({ kind: 'object', id: object.id }, $any($event.target).value)"
+        (keydown)="renameKeydown($event, { kind: 'object', id: object.id })"
+      />
+    } @else {
+      <button
+        class="object-select"
+        [draggable]="!renaming()"
+        title="Drag to a collection or Ungrouped. Right-click for actions."
+        (dragstart)="startObjectDrag($event, object.id)"
+        (dragend)="endObjectDrag()"
+        (click)="state.activateObject(object.id)"
+      >
+        <span class="object-color" [style.background]="object.color"></span
+        ><app-icon name="cube" /><span>{{ object.name }}</span>
+      </button>
+    }
+    <button
+      class="small-icon"
+      [attr.aria-label]="(object.visible ? 'Hide ' : 'Show ') + object.name"
+      (click)="state.updateObject(object.id, { visible: !object.visible })"
+    >
+      <app-icon [name]="object.visible ? 'eye' : 'hidden'" />
+    </button>
+    <button
+      class="small-icon"
+      [class.locked]="object.locked"
+      [attr.aria-label]="(object.locked ? 'Unlock ' : 'Lock ') + object.name"
+      (click)="state.updateObject(object.id, { locked: !object.locked })"
+    >
+      <app-icon [name]="object.locked ? 'lock' : 'unlock'" />
+    </button>
+  </div>
+</ng-template>
+@if (context(); as menu) {
+  <div
+    #menuElement
+    class="explorer-context-menu"
+    role="menu"
+    aria-label="Explorer actions"
+    [style.left.px]="menuLayout().left"
+    [style.top.px]="menuLayout().top"
+    [style.width.px]="menuLayout().width"
+    [style.max-height.px]="menuLayout().maxHeight"
+    (pointerdown)="$event.stopPropagation()"
+    (contextmenu)="$event.preventDefault()"
+    (keydown)="menuKeydown($event)"
+  >
+    <div class="menu-heading">
+      {{ contextObject()?.name ?? contextCollection()?.name ?? 'Scene' }}
+    </div>
+    @switch (page()) {
+      @case ('actions') {
+        @if (contextObject(); as object) {
+          <button role="menuitem" aria-haspopup="menu" (click)="page.set('collections')">
+            Move to collection<span>›</span>
+          </button>
+          <button
+            role="menuitem"
+            aria-haspopup="menu"
+            [disabled]="objectLocked() || state.project().layers.length < 2"
+            (click)="page.set('layers')"
+          >
+            Change layer<span>›</span>
+          </button>
+          <button role="menuitem" (click)="beginRename(menu.target)">Rename object</button>
+          <button role="menuitem" (click)="toggleObject('visible')">
+            {{ object.visible ? 'Hide object' : 'Show object' }}
+          </button>
+          <button role="menuitem" (click)="toggleObject('locked')">
+            {{ object.locked ? 'Unlock object' : 'Lock object' }}
+          </button>
+          <button
+            role="menuitem"
+            class="danger"
+            [disabled]="objectLocked()"
+            (click)="deleteTarget()"
+          >
+            Delete object and its points
+          </button>
+        } @else if (contextCollection(); as collection) {
+          <button role="menuitem" (click)="addObject(collection.id)">
+            Add object to collection
+          </button>
+          <button role="menuitem" (click)="beginRename(menu.target)">Rename collection</button>
+          <button role="menuitem" class="danger" (click)="deleteTarget()">
+            Remove collection (keep objects)
+          </button>
+        } @else {
+          <button role="menuitem" (click)="addObject(null)">Add object</button>
+          <button role="menuitem" (click)="addCollection()">Add collection</button>
+        }
+      }
+      @case ('collections') {
+        <button role="menuitem" (click)="page.set('actions')">‹ Back to actions</button>
+        @if (contextObject()?.collectionId) {
+          <button role="menuitem" (click)="moveToCollection(null)">Ungrouped</button>
+        }
+        @for (collection of state.project().collections ?? []; track collection.id) {
+          @if (collection.id !== contextObject()?.collectionId) {
+            <button role="menuitem" (click)="moveToCollection(collection.id)">
+              <app-icon name="folder" />{{ collection.name }}
+            </button>
+          }
+        }
+        <button role="menuitem" (click)="addCollection(contextObject()!.id)">
+          New collection with this object
+        </button>
+      }
+      @case ('layers') {
+        <button role="menuitem" (click)="page.set('actions')">‹ Back to actions</button>
+        @for (layer of state.project().layers; track layer.id) {
+          @if (layer.id !== contextObject()?.layerId) {
+            <button role="menuitem" [disabled]="layer.locked" (click)="changeLayer(layer.id)">
+              {{ layer.name
+              }}{{
+                layer.plane
+                  ? ' · ' + layer.plane.axis.toUpperCase() + ' = ' + layer.plane.value
+                  : ''
+              }}
+            </button>
+          }
+        }
+        <p>The destination layer's fixed coordinate applies to every point in this object.</p>
+      }
+    }
+  </div>
+}

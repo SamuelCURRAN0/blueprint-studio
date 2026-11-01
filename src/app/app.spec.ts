@@ -26,6 +26,161 @@ describe('App', () => {
     const app = fixture.componentInstance;
     expect(app).toBeTruthy();
   });
+  it('changes collection membership through the active object Properties dropdown', async () => {
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
+    const fixture = TestBed.createComponent(App);
+    const state = fixture.componentInstance.state;
+    state.replaceProject(emptyProject());
+    const first = state.createCollection('object-1')!;
+    const second = state.createCollection()!;
+    await fixture.whenStable();
+    const field = fixture.nativeElement.querySelector(
+      '[aria-label="Object collection"]',
+    ) as HTMLSelectElement;
+    expect(field.value).toBe(first);
+    field.value = second;
+    field.dispatchEvent(new Event('change'));
+    await fixture.whenStable();
+    expect(state.activeObject()?.collectionId).toBe(second);
+    field.value = '';
+    field.dispatchEvent(new Event('change'));
+    await fixture.whenStable();
+    expect(state.activeObject()?.collectionId).toBeUndefined();
+  });
+  it('configures a fixed layer through the Explorer and disables the constrained point coordinate', async () => {
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
+    const fixture = TestBed.createComponent(App);
+    const state = fixture.componentInstance.state;
+    state.replaceProject(emptyProject());
+    state.addClick('front', { u: 2, v: 3 });
+    state.addClick('side', { u: 5, v: 3 });
+    await fixture.whenStable();
+    const axis = fixture.nativeElement.querySelector(
+      '[aria-label="Fixed axis for Geometry"]',
+    ) as HTMLSelectElement;
+    axis.value = 'z';
+    axis.dispatchEvent(new Event('change'));
+    await fixture.whenStable();
+    expect(state.activeLayer()?.plane).toEqual({ axis: 'z', value: 3 });
+    const coordinate = fixture.nativeElement.querySelector(
+      '[aria-label="Z coordinate"]',
+    ) as HTMLInputElement;
+    expect(coordinate.disabled).toBe(true);
+    const value = fixture.nativeElement.querySelector(
+      '[aria-label="Fixed coordinate for Geometry"]',
+    ) as HTMLInputElement;
+    value.value = '7';
+    value.dispatchEvent(new Event('input'));
+    value.dispatchEvent(new Event('blur'));
+    await fixture.whenStable();
+    expect(state.selected()?.z).toBe(7);
+    axis.value = '';
+    axis.dispatchEvent(new Event('change'));
+    await fixture.whenStable();
+    expect(coordinate.disabled).toBe(false);
+  });
+  it('selects, duplicates and deletes groups with shortcuts while preserving text-field shortcuts', async () => {
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
+    const fixture = TestBed.createComponent(App);
+    const state = fixture.componentInstance.state;
+    state.replaceProject(emptyProject());
+    state.setPointPlacement('plane');
+    state.addClick('top', { u: 1, v: 2 });
+    state.addClick('top', { u: 3, v: 4 });
+    await fixture.whenStable();
+    const canvas = fixture.nativeElement.querySelector('canvas') as HTMLCanvasElement;
+    canvas.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', ctrlKey: true, bubbles: true }));
+    expect(state.selectedIds()).toHaveLength(2);
+    canvas.dispatchEvent(new KeyboardEvent('keydown', { key: 'd', ctrlKey: true, bubbles: true }));
+    expect(state.project().points).toHaveLength(4);
+    expect(state.selectedIds()).toHaveLength(2);
+    const field = fixture.nativeElement.querySelector('input') as HTMLInputElement;
+    field.dispatchEvent(new KeyboardEvent('keydown', { key: 'd', ctrlKey: true, bubbles: true }));
+    expect(state.project().points).toHaveLength(4);
+    canvas.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
+    expect(state.project().points).toHaveLength(2);
+    state.undo();
+    expect(state.project().points).toHaveLength(4);
+  });
+  it('selects and deletes all points across objects through the buttons, with complete undo', async () => {
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
+    const fixture = TestBed.createComponent(App);
+    const state = fixture.componentInstance.state;
+    state.replaceProject(emptyProject());
+    state.rectangleClick('top', { u: 0, v: 0 });
+    state.rectangleClick('top', { u: 2, v: 3 });
+    state.createObject();
+    state.setPointPlacement('plane');
+    state.addClick('top', { u: 4, v: 5 });
+    state.select(null);
+    state.setTool('add');
+    const before = structuredClone(state.project());
+    await fixture.whenStable();
+    const selectAll = fixture.nativeElement.querySelector(
+      '[aria-label="Select all points"]',
+    ) as HTMLButtonElement;
+    const remove = fixture.nativeElement.querySelector(
+      '[aria-label="Delete selected points"]',
+    ) as HTMLButtonElement;
+    expect(remove.disabled).toBe(true);
+    selectAll.click();
+    await fixture.whenStable();
+    expect(state.selectedIds()).toHaveLength(5);
+    expect(state.tool()).toBe('select');
+    remove.click();
+    await fixture.whenStable();
+    expect(state.project().points).toEqual([]);
+    expect(state.project().edges).toEqual([]);
+    expect(state.project().objects.every((o) => !o.pointIds.length && !o.edgeIds.length)).toBe(
+      true,
+    );
+    expect(selectAll.disabled).toBe(true);
+    expect(remove.disabled).toBe(true);
+    state.undo();
+    expect(state.project()).toEqual(before);
+  });
+  it('reassigns selected points using the destination picker and move button', async () => {
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance;
+    const state = app.state;
+    state.replaceProject(emptyProject());
+    state.rectangleClick('top', { u: 0, v: 0 });
+    state.rectangleClick('top', { u: 2, v: 3 });
+    const ids = state
+      .project()
+      .points.slice(0, 2)
+      .map((p) => p.id);
+    state.createObject();
+    const other = state.activeObjectId();
+    state.createLayer();
+    const destination = state.activeObjectId();
+    state.updateLayer(state.activeLayer()!.id, { plane: { axis: 'z', value: 7 } });
+    state.selectMany(ids);
+    await fixture.whenStable();
+    const picker = fixture.nativeElement.querySelector(
+      '[aria-label="Destination object"]',
+    ) as HTMLSelectElement;
+    expect(app.pointMoveTargets().map((o) => o.id)).toEqual([other, destination]);
+    picker.value = destination;
+    picker.dispatchEvent(new Event('change'));
+    await fixture.whenStable();
+    (
+      fixture.nativeElement.querySelector(
+        '[aria-label="Move selected points to object"]',
+      ) as HTMLButtonElement
+    ).click();
+    await fixture.whenStable();
+    expect(state.activeObjectId()).toBe(destination);
+    expect(state.activeObject()?.pointIds).toEqual(ids);
+    expect(
+      state
+        .project()
+        .points.filter((p) => ids.includes(p.id))
+        .every((p) => p.z === 7),
+    ).toBe(true);
+    expect(parseProject(JSON.stringify(state.project()))).toEqual(state.project());
+  });
   function readText(blob: Blob): Promise<string> {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();

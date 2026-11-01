@@ -47,6 +47,20 @@
   display: flex;
   gap: 7px;
 }
+.selection-actions {
+  display: flex;
+  gap: 7px;
+  margin-bottom: 8px;
+}
+.selection-actions .reference-action {
+  flex: 1;
+  min-width: 0;
+}
+.selection-actions .danger {
+  background: #3d2b2e;
+  border-color: #6b454a;
+  color: #e6afb4;
+}
 .trace-action {
   background: #3a5547;
 }
@@ -300,6 +314,48 @@
 .layer-row .small-icon app-icon {
   width: 10px;
   height: 10px;
+}
+.layer-active {
+  color: #a8e0c9;
+  background: #354b40;
+}
+.layer-plane-controls {
+  margin: 4px 14px 14px 20px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  font-size: 9px;
+  color: #91a39f;
+}
+.layer-plane-controls select {
+  font-size: 10px;
+  height: 27px;
+  padding: 0 4px;
+}
+.layer-plane-value {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 8px;
+  background: #1b1f23;
+  border: 1px solid #383e44;
+  border-radius: 4px;
+}
+.layer-plane-value input {
+  min-width: 0;
+  width: 100%;
+  background: transparent;
+  border: 0;
+  color: #cbd4d9;
+  font: 11px monospace;
+}
+.layer-plane-controls p {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 9px;
+  line-height: 1.6;
 }
 .viewport-grid {
   gap: 3px;

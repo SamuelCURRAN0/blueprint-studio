@@ -13,7 +13,14 @@
           ⇄ {{ alternateTitle() }}
         </button>
       }
-      <span class="axes">{{ axes() }}</span>
+      <span class="axes">
+        @for (axis of axisLabels(); track axis.label) {
+          @if (!$first) {
+            <span aria-hidden="true">/</span>
+          }
+          <span [style.color]="axis.color">{{ axis.label }}</span>
+        }
+      </span>
     </div>
     <div class="view-actions">
       @if (referenceMovable()) {
@@ -53,8 +60,11 @@
       (lostpointercapture)="pointerUp($event)"
       (pointerleave)="pointerLeave()"
       (wheel)="wheel($event)"
-      (contextmenu)="$event.preventDefault()"
+      (contextmenu)="openPointContextMenu($event)"
     ></canvas>
+    @if (pointContextMenu()) {
+      <app-point-context-menu [size]="size()" (closed)="focusCanvas()" />
+    }
     <span class="view-label">ORTHOGRAPHIC <span>·</span> {{ axes() }}</span>
     @if (pointPicker()) {
       <div

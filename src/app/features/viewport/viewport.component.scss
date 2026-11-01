@@ -40,6 +40,9 @@ h2 {
   color: #d6dade;
 }
 .axes {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font: 10px monospace;
   color: #818994;
   margin-left: 3px;

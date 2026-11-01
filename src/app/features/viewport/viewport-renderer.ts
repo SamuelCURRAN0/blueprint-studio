@@ -28,6 +28,9 @@ export interface RenderScene {
   gridSize: number;
   labels: boolean;
   selectedId: string | null;
+  selectedIds?: readonly string[];
+  /** Screen-space marquee; it does not move with world coordinates. */
+  selectionBox?: { a: Position; b: Position } | null;
   pending: Projection | null;
   preview: BlueprintPoint | null;
   cursor?: Position | null;
@@ -113,6 +116,7 @@ export function renderViewport(
   );
   const pointNumbers = new Map(scene.project.points.map((p, i) => [p.id, i + 1]));
   const occupiedLabels: { x: number; y: number; width: number }[] = [];
+  const selectedIds = new Set(scene.selectedIds ?? []);
   for (const edge of scene.project.edges) {
     const object = edgeOwners.get(edge.id);
     if (!object?.visible) continue;
@@ -125,7 +129,7 @@ export function renderViewport(
   ctx.globalAlpha = 1;
   for (const [index, point] of scene.points.entries()) {
     const pos = screen(projectPoint(point, view));
-    const selected = point.id === scene.selectedId;
+    const selected = point.id === scene.selectedId || selectedIds.has(point.id);
     const object = pointOwners.get(point.id);
     const color = selected ? '#9aead2' : (object?.color ?? '#b6c4cb');
     if (pos.u < -20 || pos.u > width + 20 || pos.v < -20 || pos.v > height + 20) continue;
@@ -160,6 +164,16 @@ export function renderViewport(
     }
   }
   ctx.globalAlpha = 1;
+  if (!exporting && scene.selectionBox) {
+    const { a, b } = scene.selectionBox;
+    ctx.fillStyle = '#8cd5ba18';
+    ctx.fillRect(a.u, a.v, b.u - a.u, b.v - a.v);
+    ctx.strokeStyle = '#8cd5ba';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 3]);
+    ctx.strokeRect(a.u, a.v, b.u - a.u, b.v - a.v);
+    ctx.setLineDash([]);
+  }
   const pending = scene.pending;
   if (pending && !exporting) {
     const firstAxes = VIEW_AXES[pending.view];

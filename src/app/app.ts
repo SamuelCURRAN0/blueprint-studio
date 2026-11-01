@@ -18,10 +18,11 @@ import { downloadBlob, exportSvg, projectFileStem } from './core/geometry/export
 import { createZip } from './core/geometry/zip';
 import { renderPng } from './features/viewport/viewport-export';
 import { readReferenceImage } from './core/geometry/reference-image';
+import { SceneExplorerComponent } from './features/explorer/scene-explorer.component';
 
 @Component({
   selector: 'app-root',
-  imports: [FormsModule, ViewportComponent, IconComponent],
+  imports: [FormsModule, ViewportComponent, IconComponent, SceneExplorerComponent],
   templateUrl: './app.html',
   styleUrl: './app.scss',
 })
@@ -40,6 +41,17 @@ export class App {
   readonly referenceView = signal<ViewType>('front');
   readonly reference = computed(() => this.state.project().referenceImages?.[this.referenceView()]);
   readonly imageLoading = signal(false);
+  readonly moveObjectId = signal('');
+  readonly pointMoveTargets = this.state.pointMoveTargets;
+  readonly pointMoveTarget = computed(
+    () =>
+      this.pointMoveTargets().find((o) => o.id === this.moveObjectId()) ??
+      this.pointMoveTargets().at(0) ??
+      null,
+  );
+  readonly pointMoveLayer = computed(() =>
+    this.state.project().layers.find((l) => l.id === this.pointMoveTarget()?.layerId),
+  );
   private savedJson = '';
   readonly views = viewChildren(ViewportComponent);
   readonly tools: { id: Tool; label: string; key: string }[] = [
@@ -61,6 +73,14 @@ export class App {
     (['x', 'y', 'z'] as const)
       .find((axis) => !VIEW_AXES[this.state.activeView()].includes(axis))!
       .toUpperCase();
+  readonly constructionPlaneFixed = computed(
+    () => this.state.activeLayer()?.plane?.axis.toUpperCase() === this.planeAxis(),
+  );
+  readonly constructionDepth = computed(() =>
+    this.constructionPlaneFixed()
+      ? this.state.activeLayer()!.plane!.value
+      : this.state.planeDepth(),
+  );
   constructor() {
     try {
       const saved = this.storage.load();
@@ -378,6 +398,14 @@ export class App {
       return;
     }
     if ((event.ctrlKey || event.metaKey) && !editing) {
+      if (event.key.toLowerCase() === 'd') {
+        event.preventDefault();
+        this.state.duplicateSelected();
+      }
+      if (event.key.toLowerCase() === 'a') {
+        event.preventDefault();
+        this.state.selectAll();
+      }
       if (event.key.toLowerCase() === 'z') {
         event.preventDefault();
         event.shiftKey ? this.state.redo() : this.state.undo();
@@ -400,8 +428,7 @@ export class App {
     }
     if (event.key === 'Delete' || event.key === 'Backspace') {
       event.preventDefault();
-      const id = this.state.selectedId();
-      if (id) this.state.deletePoint(id);
+      this.state.deleteSelected();
     }
     if (event.key === '?') {
       this.help.set(!this.help());

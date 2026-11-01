@@ -22,13 +22,13 @@ The production application is emitted to `dist/blueprint-studio/browser`. Tests 
 
 One canonical `BlueprintPoint { id, x, y, z }` represents each 3D point. Viewports derive projections; there are no separate per-view point stores.
 
-| View  | Horizontal axis, positive right | Vertical axis, positive up | Hidden coordinate |
-| ----- | ------------------------------- | -------------------------- | ----------------- |
-| Front | X, width                        | Z, height                  | Y                 |
-| Back  | −X, width (positive X left)     | Z, height                  | Y                 |
-| Side  | Y, length                       | Z, height                  | X                 |
-| Top   | X, width                        | Y, length                  | Z                 |
-| Bottom | −X, width (positive X left)    | Y, length                  | Z                 |
+| View   | Horizontal axis, positive right | Vertical axis, positive up | Hidden coordinate |
+| ------ | ------------------------------- | -------------------------- | ----------------- |
+| Front  | X, width                        | Z, height                  | Y                 |
+| Back   | −X, width (positive X left)     | Z, height                  | Y                 |
+| Side   | Y, length                       | Z, height                  | X                 |
+| Top    | X, width                        | Y, length                  | Z                 |
+| Bottom | −X, width (positive X left)     | Y, length                  | Z                 |
 
 This is a consistent right-handed XYZ convention with Z up. The labels are modeling projections, rather than a claim of a first-angle or third-angle engineering sheet convention. The top view shows positive Y up the screen. All views use **40 CSS pixels per world unit at 100% zoom**. Each view can zoom or pan independently. Units (`m`, `cm`, `mm`) label world coordinates; changing the label does not rescale existing numeric values.
 
@@ -39,6 +39,31 @@ This is a consistent right-handed XYZ convention with Z up. The labels are model
 Every pair of different projection planes works in either order. Front/Back share the X/Z plane; Top/Bottom share the X/Y plane. Two opposite views alone cannot determine a 3D point: combine Front/Back with Side or Top/Bottom, or combine Top/Bottom with Side. Clicking the same plane again revises that projection. `Escape` cancels. The pure `combineProjections` function independently rejects contradictory shared coordinates; the UI explicitly constrains the second click before calling it.
 
 Select or drag a point to change its two visible axes while preserving the hidden coordinate. Enter exact X/Y/Z values in Properties; edits commit on leaving the field. Finite coordinates within ±1 billion are supported. Selection respects visibility; editing also respects object and layer locks.
+
+### Fixed-axis layers and groups of points
+
+**Drag objects into collections:** drag an object's name in Explorer onto a collection header or its contents. Valid destinations highlight; dropping into a collapsed collection opens it. Drag onto **Ungrouped** to remove the object from its collection. Escape or dropping outside cancels. Each move is one undo step and preserves geometry and the object's construction layer.
+
+**Collections** organize whole objects independently of construction layers. Use **Add collection** in Explorer, name it, then right-click an object and choose **Move to collection**, or use **Properties → Active object → Collection**. Expand/collapse a collection to show its objects; its **+** adds an object directly inside it. New objects otherwise follow the active object's collection. Older projects open with their objects **Ungrouped**. Collection changes are saved in project files and recovery copies and support undo/redo.
+
+Right-click an Explorer object for Move to collection, Change layer, Rename, visibility/locking or Delete. **New collection with this object** creates and assigns it in one undo step. Right-click a collection to add an object, rename it or **Remove collection (keep objects)**; removed collections leave their objects Ungrouped. Right-click empty Explorer space to create an object or collection. Shift+F10 opens these menus from a focused row; arrow keys navigate and Escape closes them. Grouping never moves geometry, changes a construction layer or removes connections.
+
+In **Explorer → Layers**, choose **Keep axis → X fixed, Y fixed or Z fixed**, then enter the shared coordinate once. Enabling it starts from the selected point on that layer, or its first point (the construction depth is used for an empty layer). Existing points align to the chosen value, and new points, coordinate edits and drags keep it. Changing the layer value moves its points to the new plane; choose **Free 3D** to release the constraint. These changes support undo/redo and are saved in project files and recovery copies. Unlock affected objects before changing their coordinates.
+
+Create a layer with **+**; it includes an empty active object ready for drawing. Click a layer's icon to draw on it, or assign an existing object's **Layer** in Properties. Reassigned points follow the destination layer's fixed coordinate. New objects use the active object's layer.
+
+A fixed layer supplies the missing depth for one-click Add point and Polyline placement: **X fixed → Side**, **Y fixed → Front/Back**, **Z fixed → Top/Bottom**. Other views follow the selected placement method while keeping the layer coordinate. Rectangles use the layer's depth and must be drawn in one of these matching views.
+
+- **Shift-click** or **Ctrl/Cmd-click** toggles a point in the selection. Drag over empty space to box-select; hold Shift/Ctrl/Cmd to add the box to your selection. **Ctrl/Cmd+A** selects all visible points.
+- Drag any selected point to move the editable selection together, preserving spacing and hidden coordinates. A fixed axis on any editable selected layer constrains that axis for the whole group. Locked points stay in place. Coordinate fields show the last selected point and translate the group by the same amount.
+- **Duplicate selected** in Properties or **Ctrl/Cmd+D** copies editable selected points in place, including edges whose two endpoints are selected. Copies keep their objects and layers and are selected immediately; drag a selected copy to move the copies together.
+- **Delete/Backspace** removes editable selected points and their connected edges as one operation. Each duplication and whole group drag is also one undo step. Escape during a point drag restores the group.
+- **Select all points → Delete selected** in Point transform clears all visible, unlocked geometry; the same actions use **Ctrl/Cmd+A → Delete**. Show and unlock every object and layer first to clear the entire drawing. Objects, layers and references remain available, and Undo restores the deleted geometry.
+- **Move to object** in Point transform reassigns unlocked selected points to an existing visible, unlocked object. Edges between moved points follow them; connections to points left behind are removed because edges belong to one object. Moved points follow the destination layer's fixed coordinate, if any. The operation preserves point IDs, selects the moved points and supports undo/redo as one step.
+
+**Right-click a point** for Delete, Duplicate, Move to object and Change object's layer. Right-clicking an already selected point keeps the group selected; right-clicking another point selects that point. When projections overlap, **Choose overlapping point** identifies the exact point by its number, owner and coordinates before acting. Right-click empty space for selection actions. The menu respects object/layer locks and supports undo/redo through the usual commands. **Change object's layer** moves the entire clicked point's object, including its other points and edges; a fixed destination layer aligns those points. You can also select the object's name in Explorer and use **Properties → Active object → Layer**.
+
+With a canvas focused, **Shift+F10** or the context-menu key opens the same menu. Use Up/Down, Home/End and Enter to navigate, Left to return from a submenu, or Escape to close. Clicking outside, zooming, switching views/tools or changing the model dismisses the menu.
 
 ## Reference images and tracing
 
@@ -58,23 +83,25 @@ Images and their settings are included in Save, recovery and exported project JS
 
 ## Tools and navigation
 
-| Action                | Shortcut / behavior                                                                                         |
-| --------------------- | ----------------------------------------------------------------------------------------------------------- |
-| Select / move         | `V` / `G`; drag a point                                                                                     |
-| Add 3D point          | `P`; two distinct view clicks                                                                               |
-| Connect points        | `E`; two existing points in the same object                                                                 |
-| Polyline              | `L`; click existing points or create new ones with two projections; `Escape` ends the chain                 |
-| Rectangle             | `R`; set the explicit hidden-axis construction depth in Properties, then click opposite corners in one view |
-| Measurement           | `M`; two clicks in one view; reports **projected 2D distance**, in project units                            |
-| Delete point / edge   | `D` / `K`; click the geometry                                                                               |
-| Delete selected point | `Delete` / `Backspace`; connected edges are removed too                                                     |
-| Pan                   | Middle-drag or Alt-drag                                                                                     |
-| Zoom                  | Mouse wheel, anchored at the cursor                                                                         |
-| Fit all               | `Home`                                                                                                      |
-| Reset / fit a view    | View header controls                                                                                        |
-| Undo / redo           | `Ctrl+Z` / `Ctrl+Shift+Z` or `Ctrl+Y`                                                                       |
-| Save                  | `Ctrl+S`                                                                                                    |
-| Help                  | `?`                                                                                                         |
+| Action              | Shortcut / behavior                                                                                         |
+| ------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Select / move       | `V` / `G`; drag a point                                                                                     |
+| Add 3D point        | `P`; two distinct view clicks                                                                               |
+| Connect points      | `E`; two existing points in the same object                                                                 |
+| Polyline            | `L`; click existing points or create new ones with two projections; `Escape` ends the chain                 |
+| Rectangle           | `R`; set the explicit hidden-axis construction depth in Properties, then click opposite corners in one view |
+| Measurement         | `M`; two clicks in one view; reports **projected 2D distance**, in project units                            |
+| Delete point / edge | `D` / `K`; click the geometry                                                                               |
+| Duplicate selection | `Ctrl+D` / `Cmd+D`; copies points and edges between selected endpoints                                      |
+| Select all points   | `Ctrl+A` / `Cmd+A`; selects visible points                                                                  |
+| Delete selection    | `Delete` / `Backspace`; editable selected points and their connected edges                                  |
+| Pan                 | Middle-drag or Alt-drag                                                                                     |
+| Zoom                | Mouse wheel, anchored at the cursor                                                                         |
+| Fit all             | `Home`                                                                                                      |
+| Reset / fit a view  | View header controls                                                                                        |
+| Undo / redo         | `Ctrl+Z` / `Ctrl+Shift+Z` or `Ctrl+Y`                                                                       |
+| Save                | `Ctrl+S`                                                                                                    |
+| Help                | `?`                                                                                                         |
 
 View dividers are draggable; double-click restores an even split. Grid, snapping, spacing, labels and optional synchronized zoom are available in Properties. Small layouts expose Explorer and Properties drawers from the workspace heading. Keyboard shortcuts apply outside text fields.
 

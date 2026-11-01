@@ -7,6 +7,66 @@ import { projectPoint, worldToScreen } from '../geometry/geometry';
 import { VIEW_TYPES } from '../models/blueprint';
 
 describe('project persistence and export', () => {
+  it('round trips collections and their memberships, strips unknown fields, and keeps legacy projects unchanged', () => {
+    const legacy = emptyProject();
+    expect(parseProject(JSON.stringify(legacy))).toEqual(legacy);
+    const project = { ...legacy, collections: [{ id: 'collection-1', name: 'Frame' }] };
+    project.objects[0].collectionId = 'collection-1';
+    const imported = JSON.parse(JSON.stringify(project));
+    imported.collections[0].extra = 'untrusted';
+    expect(parseProject(JSON.stringify(imported))).toEqual(project);
+    const storage = new ProjectStorageService();
+    storage.save(project, true);
+    expect(storage.load(true)).toEqual(project);
+  });
+  it.each([
+    null,
+    {},
+    [{ id: 'a', name: '' }],
+    [
+      { id: 'a', name: 'A' },
+      { id: 'a', name: 'B' },
+    ],
+  ])('rejects invalid collections: %j', (collections) => {
+    expect(() => parseProject(JSON.stringify({ ...emptyProject(), collections }))).toThrow();
+  });
+  it('rejects object memberships that reference missing collections', () => {
+    const project = emptyProject();
+    project.objects[0].collectionId = 'missing';
+    expect(() => parseProject(JSON.stringify(project))).toThrow(/collection/);
+  });
+  it('round trips a fixed layer, strips extra plane properties, and supports old free layers', () => {
+    const project = emptyProject();
+    project.layers[0].plane = { axis: 'z', value: -3 };
+    project.points = [{ id: 'a', x: 1, y: 2, z: -3 }];
+    project.objects[0].pointIds = ['a'];
+    expect(parseProject(JSON.stringify(project))).toEqual(project);
+    const storage = new ProjectStorageService();
+    storage.save(project, true);
+    expect(storage.load(true)).toEqual(project);
+    const imported = JSON.parse(JSON.stringify(project));
+    imported.layers[0].plane.extra = 'untrusted';
+    expect(parseProject(JSON.stringify(imported))).toEqual(project);
+    delete project.layers[0].plane;
+    expect(parseProject(JSON.stringify(project))).toEqual(project);
+  });
+  it.each([
+    null,
+    [],
+    {},
+    { axis: 'w', value: 1 },
+    { axis: 'z', value: '1' },
+    { axis: 'z', value: 1e10 },
+  ])('rejects an invalid layer plane: %j', (plane) => {
+    const project = emptyProject();
+    const imported = { ...project, layers: [{ ...project.layers[0], plane }] };
+    expect(() => parseProject(JSON.stringify(imported))).toThrow(/layer coordinate/);
+  });
+  it('rejects geometry inconsistent with its fixed layer', () => {
+    const project = demoProject();
+    project.layers[0].plane = { axis: 'z', value: 99 };
+    expect(() => parseProject(JSON.stringify(project))).toThrow(/fixed coordinate/);
+  });
   it('round trips the complete demo graph without duplicated point IDs', () => {
     const project = demoProject();
     expect(parseProject(JSON.stringify(project))).toEqual(project);
