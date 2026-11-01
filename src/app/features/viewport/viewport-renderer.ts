@@ -16,6 +16,7 @@ import {
   worldToScreen,
 } from '../../core/geometry/geometry';
 import { referenceCorners } from '../../core/geometry/reference-image';
+import { visibleObjectIds } from '../../core/geometry/visibility';
 
 export interface RenderScene {
   project: BlueprintProject;
@@ -107,10 +108,12 @@ export function renderViewport(
     if (!i) continue;
     ctx.fillText(format(i * labelStep), 9, screen({ u: 0, v: i * labelStep }).v + 3);
   }
-  const byId = new Map(scene.points.map((p) => [p.id, p]));
+  const visible = visibleObjectIds(scene.project);
   const pointOwners = new Map(
     scene.project.objects.flatMap((o) => o.pointIds.map((id) => [id, o] as const)),
   );
+  const points = scene.points.filter((p) => visible.has(pointOwners.get(p.id)?.id ?? ''));
+  const byId = new Map(points.map((p) => [p.id, p]));
   const edgeOwners = new Map(
     scene.project.objects.flatMap((o) => o.edgeIds.map((id) => [id, o] as const)),
   );
@@ -119,7 +122,7 @@ export function renderViewport(
   const selectedIds = new Set(scene.selectedIds ?? []);
   for (const edge of scene.project.edges) {
     const object = edgeOwners.get(edge.id);
-    if (!object?.visible) continue;
+    if (!object || !visible.has(object.id)) continue;
     ctx.globalAlpha = object.locked ? 0.45 : 1;
     const a = byId.get(edge.startPointId),
       b = byId.get(edge.endPointId);
@@ -127,7 +130,7 @@ export function renderViewport(
       line(screen(projectPoint(a, view)), screen(projectPoint(b, view)), object.color, 1.3);
   }
   ctx.globalAlpha = 1;
-  for (const [index, point] of scene.points.entries()) {
+  for (const [index, point] of points.entries()) {
     const pos = screen(projectPoint(point, view));
     const selected = point.id === scene.selectedId || selectedIds.has(point.id);
     const object = pointOwners.get(point.id);

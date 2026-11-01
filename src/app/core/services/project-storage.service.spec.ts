@@ -35,6 +35,27 @@ describe('project persistence and export', () => {
     project.objects[0].collectionId = 'missing';
     expect(() => parseProject(JSON.stringify(project))).toThrow(/collection/);
   });
+  it('persists collection visibility through project files and recovery copies', () => {
+    const project = emptyProject();
+    project.collections = [{ id: 'frame', name: 'Frame', visible: false }];
+    project.objects[0].collectionId = 'frame';
+    expect(parseProject(JSON.stringify(project))).toEqual(project);
+    const storage = new ProjectStorageService();
+    storage.save(project, true);
+    expect(storage.load(true)).toEqual(project);
+    delete project.collections[0].visible;
+    expect(parseProject(JSON.stringify(project))).toEqual(project);
+  });
+  it.each([null, 0, 'false'])('rejects invalid collection visibility %j', (visible) => {
+    expect(() =>
+      parseProject(
+        JSON.stringify({
+          ...emptyProject(),
+          collections: [{ id: 'frame', name: 'Frame', visible }],
+        }),
+      ),
+    ).toThrow(/visibility/);
+  });
   it('round trips a fixed layer, strips extra plane properties, and supports old free layers', () => {
     const project = emptyProject();
     project.layers[0].plane = { axis: 'z', value: -3 };

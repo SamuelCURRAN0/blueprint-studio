@@ -5,6 +5,7 @@ import {
   VIEW_HORIZONTAL_SIGN,
 } from '../models/blueprint';
 import { projectPoint, worldToScreen } from './geometry';
+import { visibleObjectIds } from './visibility';
 
 /** Every view uses the same square, world origin and pixels per unit, independent of editor zoom. */
 export function exportTransform(project: BlueprintProject, size = 1200): ViewportTransform {
@@ -23,11 +24,14 @@ export function exportSvg(
   view: ViewType,
   points: BlueprintProject['points'],
 ): string {
-  const transform = exportTransform(project),
-    byId = new Map(points.map((p) => [p.id, p]));
+  const transform = exportTransform(project);
+  const visible = visibleObjectIds(project);
+  const owners = new Map(project.objects.flatMap((o) => o.pointIds.map((id) => [id, o] as const)));
+  const visiblePoints = points.filter((p) => visible.has(owners.get(p.id)?.id ?? ''));
+  const byId = new Map(visiblePoints.map((p) => [p.id, p]));
   const lines: string[] = [];
   for (const object of project.objects) {
-    if (!object.visible) continue;
+    if (!visible.has(object.id)) continue;
     for (const edge of project.edges) {
       if (!object.edgeIds.includes(edge.id)) continue;
       const a = byId.get(edge.startPointId),
@@ -40,9 +44,9 @@ export function exportSvg(
       );
     }
   }
-  for (const point of points) {
+  for (const point of visiblePoints) {
     const p = worldToScreen(projectPoint(point, view), transform);
-    const color = project.objects.find((o) => o.pointIds.includes(point.id))?.color ?? '#8cd5ba';
+    const color = owners.get(point.id)?.color ?? '#8cd5ba';
     lines.push(`<circle cx="${p.u}" cy="${p.v}" r="2.5" fill="${color}"/>`);
   }
   return `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200" viewBox="0 0 1200 1200"><title>Blueprint Studio — ${view} projection</title><desc>Shared scale ${transform.scale} pixels per ${project.units}; world origin ${transform.panX}, ${transform.panY}. ${VIEW_HORIZONTAL_SIGN[view] < 0 ? 'Positive X points left in this opposite view' : 'Positive horizontal axis points right'}; positive vertical axis points up.</desc><rect width="1200" height="1200" fill="#1b1e22"/>${lines.join('')}</svg>`;

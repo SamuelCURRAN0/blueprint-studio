@@ -31,6 +31,8 @@ export interface BlueprintObject {
 export interface BlueprintCollection {
   id: string;
   name: string;
+  /** Omitted in older projects; collections are visible unless explicitly hidden. */
+  visible?: boolean;
 }
 export interface BlueprintLayer {
   id: string;

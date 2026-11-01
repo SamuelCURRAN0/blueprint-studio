@@ -241,6 +241,11 @@ export class SceneExplorerComponent {
     this.close();
     if (object) this.state.updateObject(object.id, { [field]: !object[field] });
   }
+  toggleCollectionVisibility(id: string): void {
+    const collection = this.state.project().collections?.find((c) => c.id === id);
+    this.close();
+    if (collection) this.state.setCollectionVisibility(id, collection.visible === false);
+  }
   menuKeydown(event: KeyboardEvent): void {
     if (event.ctrlKey || event.metaKey) {
       this.close();

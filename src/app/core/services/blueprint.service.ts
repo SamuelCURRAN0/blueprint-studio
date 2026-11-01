@@ -21,6 +21,7 @@ import {
 } from '../geometry/geometry';
 import { HistoryService } from './history.service';
 import { validReferenceImage } from '../geometry/reference-image';
+import { visibleObjectIds as getVisibleObjectIds } from '../geometry/visibility';
 
 export function emptyProject(): BlueprintProject {
   return {
@@ -113,11 +114,14 @@ export class BlueprintService {
     this.project().layers.find((l) => l.id === this.activeObject()?.layerId),
   );
   readonly dirty = signal(false);
+  readonly visibleObjectIds = computed(() => getVisibleObjectIds(this.project()));
+  isObjectVisible(id: string): boolean {
+    return this.visibleObjectIds().has(id);
+  }
   readonly visiblePoints = computed(() => {
-    const project = this.project(),
-      layers = new Set(project.layers.filter((l) => l.visible).map((l) => l.id));
+    const project = this.project();
     const ids = new Set(
-      project.objects.filter((o) => o.visible && layers.has(o.layerId)).flatMap((o) => o.pointIds),
+      project.objects.filter((o) => this.isObjectVisible(o.id)).flatMap((o) => o.pointIds),
     );
     return project.points.filter((p) => ids.has(p.id));
   });
@@ -132,7 +136,7 @@ export class BlueprintService {
     );
     return new Set(
       this.project()
-        .objects.filter((o) => o.visible && !o.locked && layers.has(o.layerId))
+        .objects.filter((o) => this.isObjectVisible(o.id) && !o.locked && layers.has(o.layerId))
         .map((o) => o.id),
     );
   });
@@ -648,12 +652,7 @@ export class BlueprintService {
   }
   deleteEdge(id: string): void {
     const object = this.project().objects.find((o) => o.edgeIds.includes(id));
-    if (
-      !object ||
-      object.locked ||
-      !object.visible ||
-      !this.project().layers.some((l) => l.id === object.layerId && l.visible && !l.locked)
-    ) {
+    if (!object || !this.isObjectEditable(object.id)) {
       this.notice.set('Unlock the object and layer before deleting edges.');
       return;
     }
@@ -847,6 +846,7 @@ export class BlueprintService {
     const collection = {
       id: this.id('collection'),
       name: `Collection ${String((project.collections?.length ?? 0) + 1).padStart(2, '0')}`,
+      visible: true,
     };
     this.history.record(project);
     this.project.set({
@@ -875,6 +875,21 @@ export class BlueprintService {
     }));
     this.cancel();
   }
+  setCollectionVisibility(id: string, visible: boolean): void {
+    const collection = this.project().collections?.find((c) => c.id === id);
+    if (!collection || typeof visible !== 'boolean' || (collection.visible !== false) === visible)
+      return;
+    this.history.record(this.project());
+    this.project.update((p) => ({
+      ...p,
+      collections: p.collections!.map((c) => (c.id === id ? { ...c, visible } : c)),
+    }));
+    this.selection.set(this.selectedIds());
+    this.cancel();
+    this.notice.set(
+      `${collection.name} ${visible ? 'shown' : 'hidden'}. Individual object visibility is preserved.`,
+    );
+  }
   moveObjectToCollection(id: string, collectionId: string | null): void {
     const project = this.project(),
       object = project.objects.find((o) => o.id === id);
@@ -894,6 +909,7 @@ export class BlueprintService {
         return collectionId ? { ...ungrouped, collectionId } : ungrouped;
       }),
     });
+    this.selection.set(this.selectedIds());
     this.cancel();
     this.notice.set(
       `${object.name} moved to ${collection?.name ?? 'Ungrouped'}. Geometry and layer are unchanged.`,
@@ -942,7 +958,9 @@ export class BlueprintService {
   activateLayer(id: string): void {
     const layer = this.project().layers.find((l) => l.id === id);
     if (!layer?.visible || layer.locked) return;
-    const object = this.project().objects.find((o) => o.layerId === id && o.visible && !o.locked);
+    const object = this.project().objects.find(
+      (o) => o.layerId === id && this.isObjectEditable(o.id),
+    );
     if (!object) {
       this.notice.set(
         `${layer.name} has no visible, unlocked object. Assign an object to it in Properties or create one explicitly.`,

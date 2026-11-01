@@ -22,6 +22,7 @@
       >
         <div
           class="collection-row"
+          [class.is-hidden]="collection.visible === false"
           [attr.data-collection-id]="collection.id"
           (contextmenu)="openContext($event, { kind: 'collection', id: collection.id })"
           (keydown)="contextKeydown($event, { kind: 'collection', id: collection.id })"
@@ -53,6 +54,17 @@
             </button>
           }
           <span class="count">{{ group.objects.length }}</span>
+          <button
+            class="small-icon"
+            [attr.aria-label]="
+              (collection.visible === false ? 'Show collection ' : 'Hide collection ') +
+              collection.name
+            "
+            [title]="collection.visible === false ? 'Show collection' : 'Hide collection'"
+            (click)="toggleCollectionVisibility(collection.id)"
+          >
+            <app-icon [name]="collection.visible === false ? 'hidden' : 'eye'" />
+          </button>
           <button
             class="small-icon"
             [attr.aria-label]="'Add object to ' + collection.name"
@@ -113,6 +125,7 @@
 <ng-template #objectRow let-object>
   <div
     class="object-row"
+    [class.is-hidden]="!state.isObjectVisible(object.id)"
     [class.active]="state.activeObjectId() === object.id"
     [class.dragging]="draggingObjectId() === object.id"
     [attr.data-object-id]="object.id"
@@ -210,6 +223,9 @@
             Add object to collection
           </button>
           <button role="menuitem" (click)="beginRename(menu.target)">Rename collection</button>
+          <button role="menuitem" (click)="toggleCollectionVisibility(collection.id)">
+            {{ collection.visible === false ? 'Show collection' : 'Hide collection' }}
+          </button>
           <button role="menuitem" class="danger" (click)="deleteTarget()">
             Remove collection (keep objects)
           </button>

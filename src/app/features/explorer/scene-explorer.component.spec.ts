@@ -253,6 +253,35 @@ describe('collections and Explorer menus', () => {
     state.undo();
     expect(state.project()).toEqual(before);
   });
+  it('hides and shows a collapsed collection using its eye button and right-click menu', async () => {
+    const id = state.createCollection('object-1')!;
+    const name = state.project().collections![0].name;
+    explorer.toggleCollection(id);
+    await fixture.whenStable();
+    const hide = fixture.nativeElement.querySelector(
+      `[aria-label="Hide collection ${name}"]`,
+    ) as HTMLButtonElement;
+    expect(hide).not.toBeNull();
+    hide.click();
+    await fixture.whenStable();
+    expect(state.project().collections![0].visible).toBe(false);
+    expect(state.visiblePoints()).toEqual([]);
+    expect(
+      fixture.nativeElement.querySelector(`[aria-label="Show collection ${name}"]`),
+    ).not.toBeNull();
+    await context(`[data-collection-id="${id}"]`);
+    button('Show collection').click();
+    await fixture.whenStable();
+    expect(state.visiblePoints()).toHaveLength(2);
+    expect(explorer.collapsed().has(id)).toBe(true);
+    await context(`[data-collection-id="${id}"]`);
+    button('Hide collection').click();
+    await fixture.whenStable();
+    expect(state.visiblePoints()).toEqual([]);
+    state.undo();
+    expect(state.visiblePoints()).toHaveLength(2);
+    expect(state.project().objects[0].visible).toBe(true);
+  });
   it('creates a new collection from an object in one undo step and supports renaming and moving back to Ungrouped', async () => {
     await context('[data-object-id="object-1"]');
     button('Move to collection').click();

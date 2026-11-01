@@ -59,7 +59,11 @@ export function parseProject(json: string): BlueprintProject {
   const pointsById = new Map(project.points.map((p) => [p.id, p]));
   const collectionIds = new Set((project.collections ?? []).map((c) => c.id));
   for (const collection of project.collections ?? [])
-    if (!name(collection.name)) fail('Invalid collection name.');
+    if (
+      !name(collection.name) ||
+      (collection.visible !== undefined && typeof collection.visible !== 'boolean')
+    )
+      fail('Invalid collection name or visibility.');
   for (const point of project.points)
     if (
       ![point.x, point.y, point.z].every(
@@ -202,7 +206,13 @@ export function parseProject(json: string): BlueprintProject {
       ...(plane ? { plane: { axis: plane.axis, value: plane.value } } : {}),
     })),
     ...(project.collections !== undefined
-      ? { collections: project.collections.map(({ id, name }) => ({ id, name })) }
+      ? {
+          collections: project.collections.map(({ id, name, visible }) => ({
+            id,
+            name,
+            ...(visible !== undefined ? { visible } : {}),
+          })),
+        }
       : {}),
     ...(project.referenceImages !== undefined ? { referenceImages: references } : {}),
   };
