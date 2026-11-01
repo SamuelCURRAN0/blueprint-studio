@@ -1,4 +1,9 @@
-import { BlueprintProject, ViewportTransform, ViewType } from '../models/blueprint';
+import {
+  BlueprintProject,
+  ViewportTransform,
+  ViewType,
+  VIEW_HORIZONTAL_SIGN,
+} from '../models/blueprint';
 import { projectPoint, worldToScreen } from './geometry';
 
 /** Every view uses the same square, world origin and pixels per unit, independent of editor zoom. */
@@ -6,8 +11,8 @@ export function exportTransform(project: BlueprintProject, size = 1200): Viewpor
   let min = project.points.length ? 0 : -5,
     max = project.points.length ? 0 : 5;
   for (const p of project.points) {
-    min = Math.min(min, p.x, p.y, p.z);
-    max = Math.max(max, p.x, p.y, p.z);
+    min = Math.min(min, p.x, -p.x, p.y, p.z);
+    max = Math.max(max, p.x, -p.x, p.y, p.z);
   }
   const span = Math.max(max - min, 1),
     scale = (size - 120) / span;
@@ -40,7 +45,7 @@ export function exportSvg(
     const color = project.objects.find((o) => o.pointIds.includes(point.id))?.color ?? '#8cd5ba';
     lines.push(`<circle cx="${p.u}" cy="${p.v}" r="2.5" fill="${color}"/>`);
   }
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200" viewBox="0 0 1200 1200"><title>Blueprint Studio — ${view} projection</title><desc>Shared scale ${transform.scale} pixels per ${project.units}; world origin ${transform.panX}, ${transform.panY}. Positive horizontal axis points right; positive vertical axis points up.</desc><rect width="1200" height="1200" fill="#1b1e22"/>${lines.join('')}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200" viewBox="0 0 1200 1200"><title>Blueprint Studio — ${view} projection</title><desc>Shared scale ${transform.scale} pixels per ${project.units}; world origin ${transform.panX}, ${transform.panY}. ${VIEW_HORIZONTAL_SIGN[view] < 0 ? 'Positive X points left in this opposite view' : 'Positive horizontal axis points right'}; positive vertical axis points up.</desc><rect width="1200" height="1200" fill="#1b1e22"/>${lines.join('')}</svg>`;
 }
 export function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob),

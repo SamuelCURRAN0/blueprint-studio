@@ -1,5 +1,6 @@
 export type Axis = 'x' | 'y' | 'z';
-export type ViewType = 'front' | 'side' | 'top';
+export type ViewType = 'front' | 'back' | 'side' | 'top' | 'bottom';
+export const VIEW_TYPES: ViewType[] = ['front', 'back', 'side', 'top', 'bottom'];
 export interface Position {
   u: number;
   v: number;
@@ -40,6 +41,8 @@ export interface ReferenceImage {
   centerU: number;
   centerV: number;
   width: number;
+  /** Clockwise degrees around the image center. Older projects default to zero. */
+  rotation?: number;
   opacity: number;
   visible: boolean;
 }
@@ -67,6 +70,7 @@ export type Tool =
   | 'select'
   | 'add'
   | 'move'
+  | 'move-reference'
   | 'delete-point'
   | 'edge'
   | 'delete-edge'
@@ -75,7 +79,17 @@ export type Tool =
   | 'measure';
 export const VIEW_AXES: Record<ViewType, readonly [Axis, Axis]> = {
   front: ['x', 'z'],
+  back: ['x', 'z'],
   side: ['y', 'z'],
   top: ['x', 'y'],
+  bottom: ['x', 'y'],
+};
+/** Opposite views preserve the upward axis, so positive X points left. */
+export const VIEW_HORIZONTAL_SIGN: Record<ViewType, 1 | -1> = {
+  front: 1,
+  back: -1,
+  side: 1,
+  top: 1,
+  bottom: -1,
 };
 export const AXIS_COLORS: Record<Axis, string> = { x: '#e67e83', y: '#a4c88a', z: '#82a9ed' };

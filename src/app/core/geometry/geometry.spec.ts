@@ -7,6 +7,7 @@ import {
   screenToWorld,
   snapToGrid,
   worldToScreen,
+  sameProjectionPlane,
 } from './geometry';
 import { Projection, ViewType } from '../models/blueprint';
 
@@ -31,10 +32,12 @@ describe('orthographic geometry', () => {
     { view: 'front', position: { u: -2, v: -3 } },
     { view: 'side', position: { u: 5, v: -3 } },
     { view: 'top', position: { u: -2, v: 5 } },
+    { view: 'back', position: { u: 2, v: -3 } },
+    { view: 'bottom', position: { u: 2, v: 5 } },
   ];
-  for (let i = 0; i < 3; i++)
-    for (let j = 0; j < 3; j++)
-      if (i !== j) {
+  for (let i = 0; i < projections.length; i++)
+    for (let j = 0; j < projections.length; j++)
+      if (!sameProjectionPlane(projections[i].view, projections[j].view)) {
         it(`combines ${projections[i].view} then ${projections[j].view}, including negative coordinates`, () => {
           expect(combineProjections(projections[i], projections[j], 'p1')).toEqual(point);
         });
@@ -46,18 +49,18 @@ describe('orthographic geometry', () => {
           expect(() => combineProjections(projections[i], constrained)).not.toThrow();
         });
       }
-  for (const view of ['front', 'side', 'top'] as ViewType[]) {
+  for (const view of ['front', 'back', 'side', 'top', 'bottom'] as ViewType[]) {
     it(`projects and moves in ${view}, preserving the hidden axis`, () => {
       const moved = movePointInView(point, view, { u: 10, v: 20 });
       expect(projectPoint(moved, view)).toEqual({ u: 10, v: 20 });
-      const hidden = view === 'front' ? 'y' : view === 'side' ? 'x' : 'z';
+      const hidden = view === 'front' || view === 'back' ? 'y' : view === 'side' ? 'x' : 'z';
       expect(moved[hidden]).toBe(point[hidden]);
     });
   }
   it('rejects shared coordinate conflicts in all combinations and orders', () => {
-    for (let i = 0; i < 3; i++)
-      for (let j = 0; j < 3; j++)
-        if (i !== j) {
+    for (let i = 0; i < projections.length; i++)
+      for (let j = 0; j < projections.length; j++)
+        if (!sameProjectionPlane(projections[i].view, projections[j].view)) {
           expect(() =>
             combineProjections(projections[i], {
               view: projections[j].view,
@@ -68,9 +71,25 @@ describe('orthographic geometry', () => {
   });
   it('rejects repeated views and non-finite values', () => {
     expect(() => combineProjections(projections[0], projections[0])).toThrow(/distinct/);
+    expect(() => combineProjections(projections[0], projections[3])).toThrow(/distinct/);
+    expect(() => combineProjections(projections[3], projections[0])).toThrow(/distinct/);
+    expect(() => combineProjections(projections[2], projections[4])).toThrow(/distinct/);
+    expect(() => combineProjections(projections[4], projections[2])).toThrow(/distinct/);
     expect(() =>
       combineProjections(projections[0], { view: 'side', position: { u: NaN, v: -3 } }),
     ).toThrow(/finite/);
+  });
+  it('mirrors Back horizontally and constrains shared X correctly in both directions', () => {
+    expect(projectPoint(point, 'back')).toEqual({ u: 2, v: -3 });
+    expect(movePointInView(point, 'back', { u: 10, v: 20 })).toMatchObject({ x: -10, y: 5, z: 20 });
+    expect(
+      constrainProjection({ view: 'back', position: { u: 2, v: 3 } }, 'top', { u: 99, v: 7 })
+        .position,
+    ).toEqual({ u: -2, v: 7 });
+    expect(
+      constrainProjection({ view: 'top', position: { u: -2, v: 7 } }, 'back', { u: 99, v: 3 })
+        .position,
+    ).toEqual({ u: 2, v: 3 });
   });
   it('round trips world positions through zoom, pan, negative positions and inverted vertical axes', () => {
     for (const scale of [0.1, 1, 32, 1000]) {

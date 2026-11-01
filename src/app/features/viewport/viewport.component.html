@@ -3,9 +3,29 @@
     <div class="view-name">
       <span class="view-dot" [class]="'view-dot ' + view()"></span>
       <h2>{{ title() }}</h2>
+      @if (alternateView()) {
+        <button
+          class="facing-switch"
+          (click)="switchFacing()"
+          [attr.aria-label]="'Switch to ' + alternateTitle() + ' view'"
+          [title]="'Show the ' + alternateView() + ' and its reference image'"
+        >
+          ⇄ {{ alternateTitle() }}
+        </button>
+      }
       <span class="axes">{{ axes() }}</span>
     </div>
     <div class="view-actions">
+      @if (referenceMovable()) {
+        <button
+          (click)="toggleReferenceMove()"
+          [attr.aria-label]="'Move reference image in ' + title()"
+          [attr.aria-pressed]="state.tool() === 'move-reference' && state.activeView() === view()"
+          title="Move or resize reference image (I)"
+        >
+          <app-icon name="move-reference" />
+        </button>
+      }
       <span class="zoom">{{ format((transform().scale / 40) * 100) }}%</span
       ><button (click)="fit()" title="Fit drawing" aria-label="Fit drawing">
         <app-icon name="fit" /></button
@@ -19,12 +39,19 @@
       #canvas
       tabindex="0"
       [attr.aria-label]="title() + ' drawing canvas. Use mouse to draw and middle mouse to pan.'"
-      [class.drawing]="state.tool() !== 'select' && state.tool() !== 'move'"
+      [class.drawing]="
+        state.tool() !== 'select' && state.tool() !== 'move' && state.tool() !== 'move-reference'
+      "
+      [class.reference-move]="state.tool() === 'move-reference' && referenceMovable()"
+      [class.reference-dragging]="draggingReference()"
+      [style.cursor]="state.tool() === 'move-reference' ? referenceResizeCursor() : null"
+      (keydown)="canvasKeydown($event)"
       (pointerdown)="pointerDown($event)"
       (pointermove)="pointerMove($event)"
       (pointerup)="pointerUp($event)"
       (pointercancel)="pointerUp($event)"
-      (pointerleave)="hover.set(null); tooltip.set('')"
+      (lostpointercapture)="pointerUp($event)"
+      (pointerleave)="pointerLeave()"
       (wheel)="wheel($event)"
       (contextmenu)="$event.preventDefault()"
     ></canvas>

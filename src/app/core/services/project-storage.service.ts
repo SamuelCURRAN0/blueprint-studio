@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { BlueprintProject } from '../models/blueprint';
+import { BlueprintProject, VIEW_TYPES } from '../models/blueprint';
 import { validReferenceImage } from '../geometry/reference-image';
 
 const SAVED_KEY = 'blueprint-studio.project.v1';
@@ -105,15 +105,25 @@ export function parseProject(json: string): BlueprintProject {
       !project.referenceImages ||
       typeof project.referenceImages !== 'object' ||
       Array.isArray(project.referenceImages) ||
-      Object.keys(project.referenceImages).some((key) => !['front', 'side', 'top'].includes(key))
+      Object.keys(project.referenceImages).some((key) => !(VIEW_TYPES as string[]).includes(key))
     )
       fail('Invalid reference image views.');
-    for (const view of ['front', 'side', 'top'] as const) {
+    for (const view of VIEW_TYPES) {
       const image = project.referenceImages[view];
       if (image === undefined) continue;
       if (!validReferenceImage(image)) fail('Invalid reference image.');
-      const { name, dataUrl, pixelWidth, pixelHeight, centerU, centerV, width, opacity, visible } =
-        image;
+      const {
+        name,
+        dataUrl,
+        pixelWidth,
+        pixelHeight,
+        centerU,
+        centerV,
+        width,
+        rotation,
+        opacity,
+        visible,
+      } = image;
       references[view] = {
         name,
         dataUrl,
@@ -122,6 +132,7 @@ export function parseProject(json: string): BlueprintProject {
         centerU,
         centerV,
         width,
+        ...(rotation !== undefined ? { rotation } : {}),
         opacity,
         visible,
       };

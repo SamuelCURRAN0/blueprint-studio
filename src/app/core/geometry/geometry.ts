@@ -5,11 +5,12 @@ import {
   ViewportTransform,
   ViewType,
   VIEW_AXES,
+  VIEW_HORIZONTAL_SIGN,
 } from '../models/blueprint';
 
 export function projectPoint(point: BlueprintPoint, view: ViewType): Position {
   const [u, v] = VIEW_AXES[view];
-  return { u: point[u], v: point[v] };
+  return { u: point[u] * VIEW_HORIZONTAL_SIGN[view], v: point[v] };
 }
 export function screenToWorld(position: Position, transform: ViewportTransform): Position {
   validateTransform(transform);
@@ -35,11 +36,15 @@ function validateTransform(transform: ViewportTransform): void {
     throw new Error('Invalid viewport transform.');
 }
 export function combineProjections(first: Projection, second: Projection, id = ''): BlueprintPoint {
-  if (first.view === second.view) throw new Error('Choose two distinct orthographic views.');
+  if (sameProjectionPlane(first.view, second.view))
+    throw new Error('Choose two distinct projection planes.');
   const coordinates: Partial<Record<'x' | 'y' | 'z', number>> = {};
   for (const projection of [first, second]) {
     VIEW_AXES[projection.view].forEach((axis, i) => {
-      const value = i === 0 ? projection.position.u : projection.position.v;
+      const value =
+        i === 0
+          ? projection.position.u * VIEW_HORIZONTAL_SIGN[projection.view]
+          : projection.position.v;
       if (!Number.isFinite(value)) throw new Error('Coordinates must be finite.');
       const previous = coordinates[axis];
       if (previous !== undefined && Math.abs(previous - value) > 1e-7)
@@ -58,11 +63,13 @@ export function constrainProjection(
   position: Position,
 ): Projection {
   const firstAxes = VIEW_AXES[first.view];
-  const values = [first.position.u, first.position.v];
+  const values = [first.position.u * VIEW_HORIZONTAL_SIGN[first.view], first.position.v];
   const next = { ...position };
   VIEW_AXES[view].forEach((axis, index) => {
     const shared = firstAxes.indexOf(axis);
-    if (shared >= 0) next[index === 0 ? 'u' : 'v'] = values[shared];
+    if (shared >= 0)
+      next[index === 0 ? 'u' : 'v'] =
+        values[shared] * (index === 0 ? VIEW_HORIZONTAL_SIGN[view] : 1);
   });
   return { view, position: next };
 }
@@ -74,7 +81,12 @@ export function movePointInView(
   if (!Number.isFinite(position.u) || !Number.isFinite(position.v))
     throw new Error('Coordinates must be finite.');
   const [u, v] = VIEW_AXES[view];
-  return { ...point, [u]: position.u, [v]: position.v };
+  return { ...point, [u]: position.u * VIEW_HORIZONTAL_SIGN[view], [v]: position.v };
+}
+export function sameProjectionPlane(first: ViewType, second: ViewType): boolean {
+  return (
+    VIEW_AXES[first][0] === VIEW_AXES[second][0] && VIEW_AXES[first][1] === VIEW_AXES[second][1]
+  );
 }
 export function snapToGrid(position: Position, size: number): Position {
   if (!Number.isFinite(size) || size <= 0) throw new Error('Grid size must be positive.');

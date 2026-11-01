@@ -25,8 +25,10 @@ One canonical `BlueprintPoint { id, x, y, z }` represents each 3D point. Viewpor
 | View  | Horizontal axis, positive right | Vertical axis, positive up | Hidden coordinate |
 | ----- | ------------------------------- | -------------------------- | ----------------- |
 | Front | X, width                        | Z, height                  | Y                 |
+| Back  | −X, width (positive X left)     | Z, height                  | Y                 |
 | Side  | Y, length                       | Z, height                  | X                 |
 | Top   | X, width                        | Y, length                  | Z                 |
+| Bottom | −X, width (positive X left)    | Y, length                  | Z                 |
 
 This is a consistent right-handed XYZ convention with Z up. The labels are modeling projections, rather than a claim of a first-angle or third-angle engineering sheet convention. The top view shows positive Y up the screen. All views use **40 CSS pixels per world unit at 100% zoom**. Each view can zoom or pan independently. Units (`m`, `cm`, `mm`) label world coordinates; changing the label does not rescale existing numeric values.
 
@@ -34,17 +36,23 @@ This is a consistent right-handed XYZ convention with Z up. The labels are model
 2. Move to Side. The gold guide fixes Z=3; only Y follows the cursor. A live preview appears in all three views.
 3. Click at Y=5. The resulting point is exactly `(2, 5, 3)`, and Top projects it to `(2, 5)`.
 
-Every pair of distinct views works in either order. Clicking the first view again revises that first projection. `Escape` cancels. The pure `combineProjections` function independently rejects contradictory shared coordinates; the UI explicitly constrains the second click before calling it.
+Every pair of different projection planes works in either order. Front/Back share the X/Z plane; Top/Bottom share the X/Y plane. Two opposite views alone cannot determine a 3D point: combine Front/Back with Side or Top/Bottom, or combine Top/Bottom with Side. Clicking the same plane again revises that projection. `Escape` cancels. The pure `combineProjections` function independently rejects contradictory shared coordinates; the UI explicitly constrains the second click before calling it.
 
 Select or drag a point to change its two visible axes while preserving the hidden coordinate. Enter exact X/Y/Z values in Properties; edits commit on leaving the field. Finite coordinates within ±1 billion are supported. Selection respects visibility; editing also respects object and layer locks.
 
 ## Reference images and tracing
 
-Choose **Reference** in the toolbar, select Front, Side or Top, then **Add image**. PNG, JPG and WebP files up to 10 MB are supported. Each view has its own image. Large uploads are resized and compressed for browser-local storage.
+Choose **Reference** in the toolbar, select Front, Back, Side, Top or Bottom, then **Add image**. PNG, JPG and WebP files up to 10 MB are supported. Each view has its own image. Large uploads are resized and compressed for browser-local storage.
 
-Set the image width in project units (height keeps the original proportions), its center along the view's two axes, and opacity. The image stays attached to world coordinates when you zoom or pan. **Fit view** includes both the image and visible geometry. You can hide, replace or remove a reference without deleting any points.
+Front and Back share the upper-left viewport. Use **⇄ Back** in the Front header and **⇄ Front** to return, or choose the corresponding view in Reference settings. Each face keeps its own image, width, rotation, position, opacity and visibility, as well as its camera while working. Both images are saved in project JSON and browser storage. Geometry remains one 3D model: Back mirrors X horizontally, as expected when viewing it from behind. Switching faces cancels unfinished drawing operations.
 
-For single-click tracing, set **Trace depth** and choose **Place points on image**. Each click creates a 3D point using the clicked coordinates and the chosen hidden-axis depth (Front: Y, Side: X, Top: Z). Turn off Snap to follow image features freely. Add point and Polyline also offer a **Point placement** method in Properties; choose **Two views** to return to the original two-projection workflow. Existing point movement, connections and undo/redo work with traced points.
+Top and Bottom share the lower viewport in the same way: use **⇄ Bottom** or **⇄ Top** in its header. Each side has an independent reference and adjustments, with both saved in the project. Bottom views the model from underneath, keeping positive Y up and reversing X horizontally. Both sides support tracing, moving, resizing, rotation, point editing and exports.
+
+Set the image width in project units (height keeps the original proportions), its center along the view's two axes, and opacity. **Rotation** accepts an angle from −360° to 360° around the image center; positive angles turn clockwise. Use **−90°**, **+90°** or **Reset** for quick alignment. Rotation supports undo/redo and is saved with the image. The image stays attached to world coordinates when you zoom or pan. **Fit view** includes the entire rotated image and visible geometry. You can hide, replace or remove a reference without deleting any points.
+
+Choose **Move / resize image** (`I`) in the toolbar or Reference panel, or use the image button in a view header. Drag inside the image to reposition it, or drag one of its four corner handles to resize it. Resizing keeps the opposite corner fixed, preserves proportions and works with rotated images. Grid snapping does not restrict image adjustments. With the canvas focused, arrow keys nudge by one screen pixel; hold Shift for ten pixels. A drag is one undo step, and Escape during a drag restores its starting size and position. Exact width and image-center fields remain available. Choose **Select** (`V`) to finish. Middle-drag or Alt-drag still pans the view. Image adjustments are saved with the project and leave points and edges in place.
+
+For single-click tracing, set **Trace depth** and choose **Place points on image**. Each click creates a 3D point using the clicked coordinates and the chosen hidden-axis depth (Front/Back: Y, Side: X, Top/Bottom: Z). Turn off Snap to follow image features freely. Add point and Polyline also offer a **Point placement** method in Properties; choose **Two views** to return to the original two-projection workflow. Existing point movement, connections and undo/redo work with traced points.
 
 Images and their settings are included in Save, recovery and exported project JSON; older version-1 files without images still open. PNG and SVG exports contain the drawing geometry only, without the reference backdrop.
 
@@ -79,7 +87,7 @@ When **Connect points** or **Polyline** finds several nodes under a click, a pic
 - **Recovery:** an automatic browser-local copy is updated after a short debounce.
 - **Save project / Open saved project:** a separate explicit snapshot in the same browser. New, open, import, and example changes can be undone.
 - **JSON:** portable versioned project files. Import validates version, finite coordinates, unique IDs, ownership and endpoint references before replacing the current model. The current schema is version `1`; unknown versions are rejected for future explicit migrations.
-- **PNG / SVG:** select any orthographic view in Export. Every view uses a common 1200×1200 sheet transform computed from the entire project's XYZ extent, including hidden objects. This keeps the origin, scale and proportions identical across exported views, regardless of editor zoom/pan. Hidden objects/layers are omitted from the rendered geometry. PNG is raster; SVG contains editable vector geometry.
+- **PNG / SVG:** select any orthographic view in Export, including Back. Every view uses a common 1200×1200 sheet transform computed from the entire project's XYZ extent and mirrored X extent, including hidden objects. This keeps the origin, scale and proportions identical across exported views, regardless of editor zoom/pan. Hidden objects/layers are omitted from the rendered geometry. PNG is raster; SVG contains editable vector geometry.
 - **History:** up to 100 in-memory operations. A whole drag, rectangle, or newly created polyline segment is one operation. History and transient measurements are not serialized.
 
 Storage is local to this browser and origin. Export JSON to transfer work, keep backups, or protect against browser data removal. No cloud account or external service is required.

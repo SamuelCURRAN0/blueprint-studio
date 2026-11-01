@@ -7,13 +7,21 @@ import {
   HostListener,
   inject,
   input,
+  output,
   NgZone,
   OnDestroy,
   signal,
   viewChild,
 } from '@angular/core';
 import { BlueprintService } from '../../core/services/blueprint.service';
-import { Position, ViewportTransform, ViewType, VIEW_AXES } from '../../core/models/blueprint';
+import {
+  Position,
+  ReferenceImage,
+  ViewportTransform,
+  ViewType,
+  VIEW_AXES,
+  VIEW_HORIZONTAL_SIGN,
+} from '../../core/models/blueprint';
 import {
   distanceToSegment,
   fitViewport,
@@ -24,7 +32,11 @@ import {
 } from '../../core/geometry/geometry';
 import { format, RenderScene, renderViewport } from './viewport-renderer';
 import { IconComponent } from '../../shared/icon.component';
-import { referenceCorners } from '../../core/geometry/reference-image';
+import {
+  containsReference,
+  referenceCorners,
+  resizeReference,
+} from '../../core/geometry/reference-image';
 
 @Component({
   selector: 'app-viewport',
@@ -35,9 +47,40 @@ import { referenceCorners } from '../../core/geometry/reference-image';
 export class ViewportComponent implements AfterViewInit, OnDestroy {
   readonly state = inject(BlueprintService);
   private readonly zone = inject(NgZone);
-  readonly view = input.required<ViewType>();
+  readonly baseView = input.required<ViewType>({ alias: 'view' });
+  readonly view = computed(() =>
+    this.baseView() === 'front'
+      ? this.state.frontFacing()
+      : this.baseView() === 'top'
+        ? this.state.topFacing()
+        : this.baseView(),
+  );
+  readonly alternateView = computed(() =>
+    this.baseView() === 'front'
+      ? this.view() === 'front'
+        ? 'back'
+        : 'front'
+      : this.baseView() === 'top'
+        ? this.view() === 'top'
+          ? 'bottom'
+          : 'top'
+        : null,
+  );
+  readonly alternateTitle = computed(() => {
+    const view = this.alternateView();
+    return view ? view[0].toUpperCase() + view.slice(1) : '';
+  });
+  readonly facingChanged = output<ViewType>();
+  private readonly facingTransforms = new Map<ViewType, ViewportTransform>();
   readonly title = computed(() => `${this.view()[0].toUpperCase()}${this.view().slice(1)} view`);
-  readonly axes = computed(() => VIEW_AXES[this.view()].map((a) => a.toUpperCase()).join(' / '));
+  readonly axes = computed(() =>
+    VIEW_AXES[this.view()]
+      .map(
+        (axis, index) =>
+          (index === 0 && VIEW_HORIZONTAL_SIGN[this.view()] < 0 ? '−' : '') + axis.toUpperCase(),
+      )
+      .join(' / '),
+  );
   readonly canvas = viewChild.required<ElementRef<HTMLCanvasElement>>('canvas');
   readonly transform = signal<ViewportTransform>({ scale: 40, panX: 0, panY: 0 });
   readonly size = signal({ width: 1, height: 1 });
@@ -50,6 +93,11 @@ export class ViewportComponent implements AfterViewInit, OnDestroy {
   });
   readonly hover = signal<Position | null>(null);
   readonly tooltip = signal('');
+  readonly draggingReference = signal(false);
+  readonly referenceResizeCursor = signal<string | null>(null);
+  readonly referenceMovable = computed(
+    () => !!this.state.project().referenceImages?.[this.view()]?.visible,
+  );
   readonly pointPicker = computed(() => {
     const picker = this.state.pointPicker();
     return picker?.view === this.view() ? picker : null;
@@ -103,17 +151,20 @@ export class ViewportComponent implements AfterViewInit, OnDestroy {
   private initialized = false;
   private frame = 0;
   private drag: {
-    kind: 'pan' | 'point';
+    kind: 'pan' | 'point' | 'reference' | 'reference-resize';
     pointer: number;
     start: Position;
     transform: ViewportTransform;
     id?: string;
     offset?: Position;
     recorded?: boolean;
+    reference?: ReferenceImage;
+    resizeCorner?: number;
   } | null = null;
   constructor() {
     effect(() => {
       this.state.project();
+      this.view();
       this.state.visiblePoints();
       this.state.selectedId();
       this.state.highlightedId();
@@ -128,6 +179,7 @@ export class ViewportComponent implements AfterViewInit, OnDestroy {
       this.state.rectangle();
       this.state.measurement();
       this.state.chainId();
+      this.state.tool();
       this.referenceImage();
       this.scheduleRender();
     });
@@ -226,6 +278,7 @@ export class ViewportComponent implements AfterViewInit, OnDestroy {
         rectangle?.view === this.view() && cursor ? { a: rectangle.position, b: cursor } : null,
       chainId: this.state.chainId(),
       referenceImage: this.referenceImage(),
+      referenceEditing: this.state.tool() === 'move-reference',
     };
   }
   draw(): void {
@@ -252,6 +305,36 @@ export class ViewportComponent implements AfterViewInit, OnDestroy {
   }
   private hit(position: Position): string | null {
     return this.hitPoints(position)[0] ?? null;
+  }
+  private referenceHandle(position: Position): number | null {
+    const image = this.state.project().referenceImages?.[this.view()];
+    if (!image?.visible) return null;
+    let closest: number | null = null,
+      distance = 10;
+    referenceCorners(image).forEach((corner, index) => {
+      const screen = worldToScreen(corner, this.transform());
+      const d = Math.hypot(position.u - screen.u, position.v - screen.v);
+      if (d < distance) {
+        closest = index;
+        distance = d;
+      }
+    });
+    return closest;
+  }
+  private resizeCursor(corner: number): string {
+    const image = this.state.project().referenceImages![this.view()]!;
+    const corners = referenceCorners(image).map((p) => worldToScreen(p, this.transform()));
+    const anchor = corners[(corner + 2) % 4];
+    const angle =
+      ((Math.atan2(corners[corner].v - anchor.v, corners[corner].u - anchor.u) * 180) / Math.PI +
+        180) %
+      180;
+    return ['ew-resize', 'nwse-resize', 'ns-resize', 'nesw-resize'][Math.round(angle / 45) % 4];
+  }
+  pointerLeave(): void {
+    this.hover.set(null);
+    this.tooltip.set('');
+    if (!this.drag) this.referenceResizeCursor.set(null);
   }
   private hitPoints(position: Position): string[] {
     return this.state
@@ -309,6 +392,7 @@ export class ViewportComponent implements AfterViewInit, OnDestroy {
       this.state.dismissPointPicker();
   }
   pointerDown(event: PointerEvent): void {
+    if (this.drag) return;
     if (event.button !== 0 && event.button !== 1) return;
     event.preventDefault();
     this.state.dismissPointPicker();
@@ -323,6 +407,30 @@ export class ViewportComponent implements AfterViewInit, OnDestroy {
         start: screen,
         transform: this.transform(),
       };
+      this.canvas().nativeElement.setPointerCapture(event.pointerId);
+      return;
+    }
+    if (this.state.tool() === 'move-reference') {
+      const image = this.state.project().referenceImages?.[this.view()];
+      const corner = this.referenceHandle(screen);
+      if (
+        !image?.visible ||
+        (corner === null && !containsReference(image, screenToWorld(screen, this.transform())))
+      ) {
+        this.state.notice.set('Drag the reference image to move it, or drag a corner to resize.');
+        return;
+      }
+      this.drag = {
+        kind: corner === null ? 'reference' : 'reference-resize',
+        pointer: event.pointerId,
+        start: screen,
+        transform: this.transform(),
+        reference: image,
+        resizeCorner: corner ?? undefined,
+      };
+      this.referenceResizeCursor.set(corner === null ? null : this.resizeCursor(corner));
+      this.draggingReference.set(true);
+      this.tooltip.set('');
       this.canvas().nativeElement.setPointerCapture(event.pointerId);
       return;
     }
@@ -375,9 +483,51 @@ export class ViewportComponent implements AfterViewInit, OnDestroy {
     }
   }
   pointerMove(event: PointerEvent): void {
+    if (this.drag && this.drag.pointer !== event.pointerId) return;
+    if (this.drag?.kind === 'reference' || this.drag?.kind === 'reference-resize') {
+      if (this.state.tool() !== 'move-reference' || !this.referenceMovable()) {
+        this.pointerUp(event);
+        return;
+      }
+      const screen = this.screen(event),
+        drag = this.drag;
+      this.state.cursor.set(screenToWorld(screen, this.transform()));
+      if (!drag.recorded && Math.hypot(screen.u - drag.start.u, screen.v - drag.start.v) < 3)
+        return;
+      const delta = {
+        u: (screen.u - drag.start.u) / drag.transform.scale,
+        v: -(screen.v - drag.start.v) / drag.transform.scale,
+      };
+      const patch =
+        drag.kind === 'reference-resize'
+          ? resizeReference(drag.reference!, drag.resizeCorner!, delta)
+          : {
+              centerU: drag.reference!.centerU + delta.u,
+              centerV: drag.reference!.centerV + delta.v,
+            };
+      const current = this.state.project().referenceImages![this.view()]!;
+      if (
+        current.centerU === patch.centerU &&
+        current.centerV === patch.centerV &&
+        (!('width' in patch) || current.width === patch.width)
+      )
+        return;
+      if (!drag.recorded) {
+        this.state.history.record(this.state.project());
+        drag.recorded = true;
+      }
+      this.state.transformReferenceImage(this.view(), patch);
+      return;
+    }
     const pos = this.position(event);
     this.hover.set(pos);
     this.state.hover(this.view(), pos);
+    if (this.state.tool() === 'move-reference' && !this.drag) {
+      const corner = this.referenceHandle(this.screen(event));
+      this.referenceResizeCursor.set(corner === null ? null : this.resizeCursor(corner));
+      this.tooltip.set('');
+      return;
+    }
     const id = this.hit(this.screen(event));
     const point = this.state.project().points.find((p) => p.id === id);
     this.tooltip.set(
@@ -416,12 +566,91 @@ export class ViewportComponent implements AfterViewInit, OnDestroy {
     }
   }
   pointerUp(event: PointerEvent): void {
+    this.finishDrag(event.pointerId);
+  }
+  private finishDrag(pointer: number): void {
+    if (this.drag && this.drag.pointer !== pointer) return;
     this.drag = null;
-    if (this.canvas().nativeElement.hasPointerCapture(event.pointerId))
-      this.canvas().nativeElement.releasePointerCapture(event.pointerId);
+    this.draggingReference.set(false);
+    this.referenceResizeCursor.set(null);
+    if (this.canvas().nativeElement.hasPointerCapture(pointer))
+      this.canvas().nativeElement.releasePointerCapture(pointer);
+  }
+  toggleReferenceMove(): void {
+    const selected =
+      this.state.tool() === 'move-reference' && this.state.activeView() === this.view();
+    this.state.activeView.set(this.view());
+    this.state.setTool(selected ? 'select' : 'move-reference');
+    this.canvas().nativeElement.focus();
+  }
+  showView(view: ViewType): void {
+    if (
+      ((this.baseView() === 'front' && (view === 'front' || view === 'back')) ||
+        (this.baseView() === 'top' && (view === 'top' || view === 'bottom'))) &&
+      this.view() !== view
+    ) {
+      if (this.drag) this.finishDrag(this.drag.pointer);
+      this.facingTransforms.set(this.view(), { ...this.transform() });
+      this.state.cancel();
+      this.hover.set(null);
+      this.tooltip.set('');
+      this.referenceResizeCursor.set(null);
+      if (view === 'front' || view === 'back') this.state.frontFacing.set(view);
+      else if (view === 'top' || view === 'bottom') this.state.topFacing.set(view);
+      const saved = this.facingTransforms.get(view);
+      if (saved) {
+        this.transform.set(saved);
+        if (this.state.syncZoom()) this.zoomAt(saved.scale);
+      } else this.fit();
+    }
+    this.state.activeView.set(this.view());
+    this.updateZoomStatus();
+  }
+  switchFacing(): void {
+    const next = this.alternateView();
+    if (!next) return;
+    this.showView(next);
+    this.facingChanged.emit(this.view());
+    this.canvas().nativeElement.focus();
+    this.state.notice.set(`${this.title()}. Each side has its own reference image and settings.`);
+  }
+  canvasKeydown(event: KeyboardEvent): void {
+    if (this.state.tool() !== 'move-reference') return;
+    if (this.drag?.kind === 'reference' || this.drag?.kind === 'reference-resize') {
+      if (event.key === 'Escape') {
+        const recorded = this.drag.recorded;
+        this.finishDrag(this.drag.pointer);
+        if (recorded) this.state.undo();
+        this.state.notice.set('Image adjustment cancelled.');
+        event.preventDefault();
+        event.stopPropagation();
+      } else if (event.ctrlKey || event.metaKey) {
+        this.finishDrag(this.drag.pointer);
+      }
+      return;
+    }
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+    const direction: Record<string, Position> = {
+      ArrowLeft: { u: -1, v: 0 },
+      ArrowRight: { u: 1, v: 0 },
+      ArrowUp: { u: 0, v: 1 },
+      ArrowDown: { u: 0, v: -1 },
+    };
+    const delta = direction[event.key];
+    const image = this.state.project().referenceImages?.[this.view()];
+    if (!delta || !image?.visible) return;
+    event.preventDefault();
+    event.stopPropagation();
+    this.state.activeView.set(this.view());
+    const step = (event.shiftKey ? 10 : 1) / this.transform().scale;
+    this.state.updateReferenceImage(this.view(), {
+      centerU: image.centerU + delta.u * step,
+      centerV: image.centerV + delta.v * step,
+    });
   }
   wheel(event: WheelEvent): void {
     event.preventDefault();
+    if (this.drag) return;
     this.state.activeView.set(this.view());
     this.zoomAt(this.transform().scale * Math.exp(-event.deltaY * 0.0015), this.screen(event));
   }

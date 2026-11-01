@@ -11,7 +11,12 @@ import {
   ViewType,
   VIEW_AXES,
 } from '../models/blueprint';
-import { combineProjections, constrainProjection, movePointInView } from '../geometry/geometry';
+import {
+  combineProjections,
+  constrainProjection,
+  movePointInView,
+  sameProjectionPlane,
+} from '../geometry/geometry';
 import { HistoryService } from './history.service';
 import { validReferenceImage } from '../geometry/reference-image';
 
@@ -51,6 +56,8 @@ export class BlueprintService {
   } | null>(null);
   readonly activeObjectId = signal('object-1');
   readonly activeView = signal<ViewType>('front');
+  readonly frontFacing = signal<'front' | 'back'>('front');
+  readonly topFacing = signal<'top' | 'bottom'>('top');
   readonly pending = signal<Projection | null>(null);
   readonly preview = signal<BlueprintPoint | null>(null);
   readonly cursor = signal<Position>({ u: 0, v: 0 });
@@ -143,6 +150,8 @@ export class BlueprintService {
           ? 'Click to place a point at the construction depth. Change depth in Properties.'
           : 'Click in two different views to define a 3D point.',
       move: 'Drag a point to move its two visible coordinates.',
+      'move-reference':
+        'Drag the image to move; drag a corner to resize. Arrows nudge 1 pixel; Shift nudges 10. Select (V) finishes.',
       'delete-point': 'Click a point to delete it and its connected edges.',
       edge: 'Click two existing points in the same object to connect them.',
       'delete-edge': 'Click an edge to delete it.',
@@ -182,7 +191,7 @@ export class BlueprintService {
   hover(view: ViewType, position: Position): void {
     this.cursor.set(position);
     const first = this.pending();
-    if (first && first.view !== view)
+    if (first && !sameProjectionPlane(first.view, view))
       this.preview.set(combineProjections(first, constrainProjection(first, view, position)));
     const measurement = this.measurement();
     if (measurement && !measurement.complete && measurement.view === view)
@@ -214,7 +223,7 @@ export class BlueprintService {
       this.notice.set('Choose another view. The shared coordinate is constrained to the guide.');
       return;
     }
-    if (first.view === view) {
+    if (sameProjectionPlane(first.view, view)) {
       this.pending.set({ view, position });
       this.preview.set(null);
       return;
@@ -272,10 +281,42 @@ export class BlueprintService {
   }
   updateReferenceImage(
     view: ViewType,
-    patch: Partial<Pick<ReferenceImage, 'centerU' | 'centerV' | 'width' | 'opacity' | 'visible'>>,
+    patch: Partial<
+      Pick<ReferenceImage, 'centerU' | 'centerV' | 'width' | 'rotation' | 'opacity' | 'visible'>
+    >,
   ): void {
     const image = this.project().referenceImages?.[view];
     if (image) this.setReferenceImage(view, { ...image, ...patch });
+  }
+  rotateReferenceImage(view: ViewType, degrees: number): void {
+    const image = this.project().referenceImages?.[view];
+    if (!image || !Number.isFinite(degrees)) return;
+    const rotation = (((((image.rotation ?? 0) + degrees + 180) % 360) + 360) % 360) - 180;
+    this.updateReferenceImage(view, { rotation });
+  }
+  /** Continuous drag update; the viewport records one history entry for the whole gesture. */
+  transformReferenceImage(
+    view: ViewType,
+    patch: Pick<ReferenceImage, 'centerU' | 'centerV'> & { width?: number },
+  ): void {
+    const image = this.project().referenceImages?.[view];
+    const width = patch.width ?? image?.width ?? 0;
+    if (
+      !image?.visible ||
+      ![patch.centerU, patch.centerV].every((n) => Number.isFinite(n) && Math.abs(n) <= 1e9) ||
+      !Number.isFinite(width) ||
+      width < 0.000001 ||
+      width > 1e9 ||
+      (image.centerU === patch.centerU && image.centerV === patch.centerV && image.width === width)
+    )
+      return;
+    this.project.update((project) => ({
+      ...project,
+      referenceImages: {
+        ...project.referenceImages,
+        [view]: { ...image, centerU: patch.centerU, centerV: patch.centerV, width },
+      },
+    }));
   }
   removeReferenceImage(view: ViewType): void {
     if (!this.project().referenceImages?.[view]) return;

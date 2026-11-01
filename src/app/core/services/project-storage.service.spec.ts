@@ -4,6 +4,7 @@ import { emptyProject } from './blueprint.service';
 import { HistoryService } from './history.service';
 import { exportSvg, exportTransform } from '../geometry/export';
 import { projectPoint, worldToScreen } from '../geometry/geometry';
+import { VIEW_TYPES } from '../models/blueprint';
 
 describe('project persistence and export', () => {
   it('round trips the complete demo graph without duplicated point IDs', () => {
@@ -50,6 +51,7 @@ describe('project persistence and export', () => {
         centerU: -2,
         centerV: 3,
         width: 10,
+        rotation: -37.5,
         opacity: 0.4,
         visible: false,
       },
@@ -58,6 +60,36 @@ describe('project persistence and export', () => {
     const storage = new ProjectStorageService();
     storage.save(project);
     expect(storage.load()).toEqual(project);
+    project.referenceImages.back = {
+      ...project.referenceImages.front!,
+      name: 'back.png',
+      width: 12,
+      centerU: -4,
+      rotation: 90,
+      visible: true,
+    };
+    storage.save(project);
+    expect(storage.load()).toEqual(project);
+    expect(parseProject(JSON.stringify(project)).referenceImages?.back).toEqual(
+      project.referenceImages.back,
+    );
+    expect(project.referenceImages.front!.width).toBe(10);
+    project.referenceImages.top = { ...project.referenceImages.front!, name: 'top.png', width: 8 };
+    project.referenceImages.bottom = {
+      ...project.referenceImages.front!,
+      name: 'bottom.png',
+      width: 13,
+      rotation: 90,
+      centerV: -2,
+    };
+    storage.save(project);
+    expect(storage.load()).toEqual(project);
+    expect(parseProject(JSON.stringify(project)).referenceImages?.bottom).toEqual(
+      project.referenceImages.bottom,
+    );
+    expect(project.referenceImages.top.width).toBe(8);
+    delete project.referenceImages.front!.rotation;
+    expect(parseProject(JSON.stringify(project))).toEqual(project);
     expect(parseProject(JSON.stringify(emptyProject()))).toEqual(emptyProject());
   });
   it('rejects external image URLs, invalid views, dimensions and opacity', () => {
@@ -77,6 +109,9 @@ describe('project persistence and export', () => {
       { width: -1 },
       { pixelHeight: 0 },
       { opacity: 1.1 },
+      { rotation: 360.1 },
+      { rotation: null },
+      { rotation: '90' },
       { centerU: '0' },
       { dataUrl: 'data:image/svg+xml;base64,YQ==' },
     ]) {
@@ -114,11 +149,33 @@ describe('project persistence and export', () => {
     expect(front.u).toBe(top.u);
     expect(front.v).toBe(side.v);
     expect(side.u - transform.panX).toBeCloseTo(transform.panY - top.v);
-    for (const view of ['front', 'side', 'top'] as const) {
+    for (const view of VIEW_TYPES) {
       const svg = exportSvg(project, view, project.points);
       expect(svg).toContain('viewBox="0 0 1200 1200"');
       expect(svg).toContain(`Shared scale ${transform.scale}`);
       expect(svg.match(/<circle /g)).toHaveLength(project.points.length);
     }
+  });
+  it('keeps mirrored Back geometry inside the common export sheet for positive X models', () => {
+    const project = emptyProject();
+    project.points = [
+      { id: 'a', x: 2, y: 1, z: 8 },
+      { id: 'b', x: 10, y: 4, z: 2 },
+    ];
+    const transform = exportTransform(project);
+    for (const view of VIEW_TYPES) {
+      for (const point of project.points) {
+        const screen = worldToScreen(projectPoint(point, view), transform);
+        expect(screen.u).toBeGreaterThanOrEqual(0);
+        expect(screen.u).toBeLessThanOrEqual(1200);
+        expect(screen.v).toBeGreaterThanOrEqual(0);
+        expect(screen.v).toBeLessThanOrEqual(1200);
+      }
+    }
+    const p = project.points[0];
+    const front = worldToScreen(projectPoint(p, 'front'), transform);
+    const back = worldToScreen(projectPoint(p, 'back'), transform);
+    expect(front.u + back.u).toBeCloseTo(2 * transform.panX);
+    expect(front.v).toBe(back.v);
   });
 });

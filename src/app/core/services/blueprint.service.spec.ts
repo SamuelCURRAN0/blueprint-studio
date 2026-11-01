@@ -26,6 +26,56 @@ describe('shared blueprint state', () => {
     state.addClick('side', { u: 5, v: 99 });
     return state.selectedId()!;
   }
+  it('creates and moves Bottom points consistently and requires another plane to complete them', () => {
+    state.addClick('top', { u: 10, v: 3 });
+    state.hover('bottom', { u: -2, v: 3 });
+    expect(state.preview()).toBeNull();
+    state.addClick('bottom', { u: -2, v: 3 });
+    expect(state.project().points).toHaveLength(0);
+    state.addClick('front', { u: 99, v: 5 });
+    expect(state.selected()).toMatchObject({ x: 2, y: 3, z: 5 });
+    state.move(state.selectedId()!, 'bottom', { u: 4, v: 6 });
+    expect(state.selected()).toMatchObject({ x: -4, y: 6, z: 5 });
+    state.setPointPlacement('plane');
+    state.planeDepth.set(-7);
+    state.addClick('bottom', { u: 2, v: 3 });
+    expect(state.selected()).toMatchObject({ x: -2, y: 3, z: -7 });
+  });
+  it('creates and edits canonical points from Back and never uses Front/Back alone as two planes', () => {
+    state.addClick('front', { u: 10, v: 3 });
+    state.hover('back', { u: -2, v: 3 });
+    expect(state.preview()).toBeNull();
+    state.addClick('back', { u: -2, v: 3 });
+    expect(state.project().points).toHaveLength(0);
+    state.addClick('side', { u: 5, v: 99 });
+    expect(state.selected()).toMatchObject({ x: 2, y: 5, z: 3 });
+    state.move(state.selectedId()!, 'back', { u: 4, v: 6 });
+    expect(state.selected()).toMatchObject({ x: -4, y: 5, z: 6 });
+    state.setPointPlacement('plane');
+    state.planeDepth.set(-7);
+    state.addClick('back', { u: 2, v: 3 });
+    expect(state.selected()).toMatchObject({ x: -2, y: -7, z: 3 });
+  });
+  it('rotates a reference per view with undo/redo and reset while preserving geometry', () => {
+    add();
+    const points = structuredClone(state.project().points);
+    state.setReferenceImage('front', reference);
+    state.setReferenceImage('top', { ...reference, rotation: 15 });
+    state.rotateReferenceImage('front', 90);
+    expect(state.project().referenceImages?.front?.rotation).toBe(90);
+    state.rotateReferenceImage('front', 90);
+    expect(state.project().referenceImages?.front?.rotation).toBe(-180);
+    state.undo();
+    expect(state.project().referenceImages?.front?.rotation).toBe(90);
+    state.redo();
+    expect(state.project().referenceImages?.front?.rotation).toBe(-180);
+    state.updateReferenceImage('front', { rotation: -37.5 });
+    expect(state.project().referenceImages?.front?.rotation).toBe(-37.5);
+    state.updateReferenceImage('front', { rotation: 0 });
+    expect(state.project().referenceImages?.front?.rotation).toBe(0);
+    expect(state.project().referenceImages?.top?.rotation).toBe(15);
+    expect(state.project().points).toEqual(points);
+  });
   it('does not create a point from a single projection, and constrains the second', () => {
     state.addClick('front', { u: 2, v: 3 });
     expect(state.project().points).toHaveLength(0);

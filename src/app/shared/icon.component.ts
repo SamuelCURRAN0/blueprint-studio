@@ -1,6 +1,8 @@
 import { Component, input } from '@angular/core';
 const paths: Record<string, string> = {
   image: 'M3 3h18v18H3zM3 17l6-6 4 4 3-3 5 5M16 7h.01',
+  'move-reference':
+    'M3 3h12v7M3 15V3M3 12l4-4 4 4M17 10v12M11 16h12M14 13l-3 3 3 3M20 13l3 3-3 3M14 13l3-3 3 3M14 19l3 3 3-3',
   select: 'M5 3l14 9-7 1-3 7z',
   add: 'M12 4v16M4 12h16',
   move: 'M12 3v18M3 12h18M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3',

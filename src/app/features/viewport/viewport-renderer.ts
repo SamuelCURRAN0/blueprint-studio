@@ -7,6 +7,7 @@ import {
   ViewportTransform,
   ViewType,
   VIEW_AXES,
+  VIEW_HORIZONTAL_SIGN,
 } from '../../core/models/blueprint';
 import {
   constrainProjection,
@@ -34,6 +35,7 @@ export interface RenderScene {
   rectangle?: { a: Position; b: Position } | null;
   chainId?: string | null;
   referenceImage?: CanvasImageSource | null;
+  referenceEditing?: boolean;
 }
 export function renderViewport(
   ctx: CanvasRenderingContext2D,
@@ -55,10 +57,14 @@ export function renderViewport(
   ctx.fillRect(0, 0, width, height);
   const reference = scene.project.referenceImages?.[view];
   if (!exporting && reference?.visible && scene.referenceImage) {
-    const [a, b] = referenceCorners(reference).map(screen);
+    const center = screen({ u: reference.centerU, v: reference.centerV });
+    const imageWidth = reference.width * t.scale;
+    const imageHeight = (imageWidth * reference.pixelHeight) / reference.pixelWidth;
     ctx.save();
     ctx.globalAlpha = reference.opacity;
-    ctx.drawImage(scene.referenceImage, a.u, a.v, b.u - a.u, b.v - a.v);
+    ctx.translate(center.u, center.v);
+    ctx.rotate(((reference.rotation ?? 0) * Math.PI) / 180);
+    ctx.drawImage(scene.referenceImage, -imageWidth / 2, -imageHeight / 2, imageWidth, imageHeight);
     ctx.restore();
   }
   const min = screenToWorld({ u: 0, v: height }, t),
@@ -87,7 +93,11 @@ export function renderViewport(
   ctx.textAlign = 'center';
   for (let i = Math.ceil(min.u / labelStep); i <= Math.floor(max.u / labelStep); i++) {
     if (!i) continue;
-    ctx.fillText(format(i * labelStep), screen({ u: i * labelStep, v: 0 }).u, height - 10);
+    ctx.fillText(
+      format(i * labelStep * VIEW_HORIZONTAL_SIGN[view]),
+      screen({ u: i * labelStep, v: 0 }).u,
+      height - 10,
+    );
   }
   ctx.textAlign = 'left';
   for (let i = Math.ceil(min.v / labelStep); i <= Math.floor(max.v / labelStep); i++) {
@@ -157,7 +167,9 @@ export function renderViewport(
     VIEW_AXES[view].forEach((axis, index) => {
       const shared = firstAxes.indexOf(axis);
       if (shared < 0) return;
-      const value = shared === 0 ? pending.position.u : pending.position.v;
+      const canonical =
+        shared === 0 ? pending.position.u * VIEW_HORIZONTAL_SIGN[pending.view] : pending.position.v;
+      const value = canonical * (index === 0 ? VIEW_HORIZONTAL_SIGN[view] : 1);
       const p = screen(index === 0 ? { u: value, v: 0 } : { u: 0, v: value });
       line(
         index === 0 ? { u: p.u, v: 0 } : { u: 0, v: p.v },
@@ -210,13 +222,36 @@ export function renderViewport(
     ctx.fillStyle = '#e7cf88';
     ctx.fillText(text, (a.u + b.u - textWidth) / 2, (a.v + b.v) / 2 - 8);
   }
+  if (!exporting && reference?.visible && scene.referenceEditing && scene.referenceImage) {
+    const corners = referenceCorners(reference).map(screen);
+    ctx.save();
+    ctx.globalAlpha = 1;
+    ctx.setLineDash([5, 4]);
+    corners.forEach((p, i) => line(p, corners[(i + 1) % 4], '#8cd5ba'));
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#1b1e22';
+    for (const corner of corners) {
+      ctx.fillRect(corner.u - 4, corner.v - 4, 8, 8);
+      ctx.strokeRect(corner.u - 4, corner.v - 4, 8, 8);
+    }
+    ctx.restore();
+  }
   // Axis compass stays the same size regardless of viewport scale.
   const origin = { u: width - 37, v: height - 35 };
-  line(origin, { u: origin.u + 21, v: origin.v }, AXIS_COLORS[uAxis], 1.5);
+  line(
+    origin,
+    { u: origin.u + 21 * VIEW_HORIZONTAL_SIGN[view], v: origin.v },
+    AXIS_COLORS[uAxis],
+    1.5,
+  );
   line(origin, { u: origin.u, v: origin.v - 21 }, AXIS_COLORS[vAxis], 1.5);
   ctx.font = 'bold 10px "Segoe UI",sans-serif';
   ctx.fillStyle = AXIS_COLORS[uAxis];
-  ctx.fillText(uAxis.toUpperCase(), origin.u + 24, origin.v + 3);
+  ctx.fillText(
+    uAxis.toUpperCase(),
+    origin.u + (VIEW_HORIZONTAL_SIGN[view] < 0 ? -28 : 24),
+    origin.v + 3,
+  );
   ctx.fillStyle = AXIS_COLORS[vAxis];
   ctx.fillText(vAxis.toUpperCase(), origin.u - 3, origin.v - 27);
 }

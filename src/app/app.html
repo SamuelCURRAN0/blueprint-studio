@@ -309,7 +309,7 @@
           'minmax(0,' + splitY() + 'fr) 6px minmax(0,' + (100 - splitY()) + 'fr)'
         "
       >
-        <app-viewport view="front" />
+        <app-viewport view="front" (facingChanged)="referenceView.set($event)" />
         <div
           class="splitter vertical"
           role="separator"
@@ -325,18 +325,21 @@
           (pointerdown)="resizePanels($event, 'y')"
           (dblclick)="splitY.set(50)"
         ></div>
-        <app-viewport view="top" class="top-view" />
+        <app-viewport view="top" class="top-view" (facingChanged)="referenceView.set($event)" />
       </div>
       <div class="workspace-hint">
         <app-icon name="point" /><span>
-          @if (state.pointPlacement() === 'plane') {
+          @if (state.tool() === 'move-reference') {
+            <b>Align your reference.</b> Drag the image to move it or drag a corner to resize.
+            Choose Select (V) when finished.
+          } @else if (state.pointPlacement() === 'plane') {
             <b>Trace in one view.</b> Each click places a point at the construction depth. Turn off
             Snap for free placement.
           } @else {
             <b>Build in two views.</b> Place a point in one view, then complete it in another. The
             third projection follows.
           }</span
-        ><kbd>P</kbd>
+        ><kbd>{{ state.tool() === 'move-reference' ? 'I' : 'P' }}</kbd>
       </div>
     </section>
     <aside class="right-sidebar" [class.drawer-open]="rightOpen()">
@@ -359,12 +362,23 @@
         <select
           id="reference-view"
           [ngModel]="referenceView()"
-          (ngModelChange)="referenceView.set($event)"
+          (ngModelChange)="selectReferenceView($event)"
         >
           @for (view of viewTypes; track view) {
             <option [value]="view">{{ view[0].toUpperCase() + view.slice(1) }} view</option>
           }
         </select>
+        @if (referenceView() === 'front' || referenceView() === 'back') {
+          <p class="field-help">
+            Front and Back share the same viewport. Use ⇄ in its header to switch. Each side keeps
+            its own image and settings.
+          </p>
+        } @else if (referenceView() === 'top' || referenceView() === 'bottom') {
+          <p class="field-help">
+            Top and Bottom share the same viewport. Use ⇄ in its header to switch. Each side keeps
+            its own image and settings.
+          </p>
+        }
         @if (reference(); as image) {
           <div class="reference-preview">
             <img [src]="image.dataUrl" [alt]="image.name" /><span [title]="image.name">{{
@@ -387,6 +401,13 @@
           (change)="importReference($event)"
         />
         @if (reference(); as image) {
+          <button class="reference-action" [disabled]="!image.visible" (click)="moveReference()">
+            <app-icon name="move-reference" />Move / resize image
+          </button>
+          <p class="field-help">
+            Drag the image to move it or drag a corner to resize. Proportions stay fixed. Arrow keys
+            nudge it; Shift moves 10× farther. Choose Select (V) when finished.
+          </p>
           <label class="setting-row"
             ><span>Show image</span
             ><input
@@ -423,9 +444,53 @@
             /><span>{{ state.project().units }}</span></label
           >
           <p class="field-help">Height follows the image proportions.</p>
+          <label class="field-label" for="reference-rotation">ROTATION</label>
+          <label class="coordinate-input"
+            ><input
+              id="reference-rotation"
+              aria-label="Reference image rotation"
+              type="number"
+              min="-360"
+              max="360"
+              step="1"
+              [ngModel]="image.rotation ?? 0"
+              [ngModelOptions]="{ updateOn: 'blur' }"
+              (ngModelChange)="state.updateReferenceImage(referenceView(), { rotation: $event })"
+            /><span>°</span></label
+          >
+          <div class="reference-actions">
+            <button
+              class="reference-action"
+              aria-label="Rotate reference image 90 degrees counterclockwise"
+              (click)="state.rotateReferenceImage(referenceView(), -90)"
+            >
+              −90°
+            </button>
+            <button
+              class="reference-action"
+              aria-label="Reset reference image rotation"
+              (click)="state.updateReferenceImage(referenceView(), { rotation: 0 })"
+            >
+              Reset
+            </button>
+            <button
+              class="reference-action"
+              aria-label="Rotate reference image 90 degrees clockwise"
+              (click)="state.rotateReferenceImage(referenceView(), 90)"
+            >
+              +90°
+            </button>
+          </div>
+          <p class="field-help">Rotates around the image center. Positive angles turn clockwise.</p>
           <label class="field-label">IMAGE CENTER</label>
           <label class="coordinate-input"
-            ><b>{{ referenceView() === 'side' ? 'Y' : 'X' }}</b
+            ><b>{{
+              referenceView() === 'side'
+                ? 'Y'
+                : referenceView() === 'back' || referenceView() === 'bottom'
+                  ? '−X'
+                  : 'X'
+            }}</b
             ><input
               aria-label="Reference horizontal center"
               type="number"
@@ -435,7 +500,7 @@
             /><span>{{ state.project().units }}</span></label
           >
           <label class="coordinate-input"
-            ><b>{{ referenceView() === 'top' ? 'Y' : 'Z' }}</b
+            ><b>{{ referenceView() === 'top' || referenceView() === 'bottom' ? 'Y' : 'Z' }}</b
             ><input
               aria-label="Reference vertical center"
               type="number"
@@ -457,7 +522,13 @@
           </div>
           <label class="field-label" for="trace-depth"
             >TRACE DEPTH ·
-            {{ referenceView() === 'front' ? 'Y' : referenceView() === 'side' ? 'X' : 'Z' }}
+            {{
+              referenceView() === 'front' || referenceView() === 'back'
+                ? 'Y'
+                : referenceView() === 'side'
+                  ? 'X'
+                  : 'Z'
+            }}
             <span>{{ state.project().units }}</span></label
           >
           <label class="coordinate-input"
@@ -736,10 +807,11 @@
         </div>
         <p class="field-help">
           Scroll: zoom at cursor · Middle-drag or Alt-drag: pan · Escape: cancel.<br />X = width, Y
-          = length, Z = height. Positive horizontal axes point right; positive vertical axes point
-          up in every view. One world unit uses the same base scale in every view. View zoom is
-          independent unless synchronized.<br />Recovery copies are saved automatically in this
-          browser. Save project keeps a separate snapshot; export JSON for a portable backup.
+          = length, Z = height. Positive horizontal axes point right (X points left in Back and Bottom);
+          positive vertical axes point up in every view. One world unit uses the same base scale in
+          every view. View zoom is independent unless synchronized.<br />Recovery copies are saved
+          automatically in this browser. Save project keeps a separate snapshot; export JSON for a
+          portable backup.
         </p>
         <button class="save-button" (click)="help.set(false)">
           Back to the studio<app-icon name="chevron" />

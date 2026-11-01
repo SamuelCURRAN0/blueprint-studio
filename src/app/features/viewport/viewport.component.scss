@@ -44,6 +44,21 @@ h2 {
   color: #818994;
   margin-left: 3px;
 }
+.facing-switch {
+  flex-shrink: 0;
+  padding: 3px 5px;
+  border: 1px solid #648b7d;
+  border-radius: 3px;
+  background: #35483e;
+  color: #b5dbc9;
+  font-size: 9px;
+}
+@media (max-width: 700px) {
+  .axes,
+  .zoom {
+    display: none;
+  }
+}
 .view-dot {
   width: 6px;
   height: 6px;
@@ -53,7 +68,8 @@ h2 {
 .side {
   background: #a4c88a;
 }
-.top {
+.top,
+.bottom {
   background: #e5b881;
 }
 .zoom {
@@ -96,6 +112,16 @@ canvas {
 }
 canvas.drawing {
   cursor: crosshair;
+}
+canvas.reference-move {
+  cursor: grab;
+}
+canvas.reference-dragging {
+  cursor: grabbing;
+}
+.view-actions button[aria-pressed='true'] {
+  color: #a8f5df;
+  background: #35483e;
 }
 .view-label {
   position: absolute;

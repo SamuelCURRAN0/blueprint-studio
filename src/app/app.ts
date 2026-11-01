@@ -11,7 +11,7 @@ import { FormsModule } from '@angular/forms';
 import { BlueprintService, emptyProject } from './core/services/blueprint.service';
 import { ViewportComponent } from './features/viewport/viewport.component';
 import { IconComponent } from './shared/icon.component';
-import { Tool, ViewType } from './core/models/blueprint';
+import { Tool, ViewType, VIEW_TYPES, VIEW_AXES } from './core/models/blueprint';
 import { parseProject, ProjectStorageService } from './core/services/project-storage.service';
 import { demoProject } from './core/geometry/demo-project';
 import { downloadBlob, exportSvg, exportTransform } from './core/geometry/export';
@@ -33,7 +33,7 @@ export class App {
   readonly rightOpen = signal(false);
   readonly saveStatus = signal('Local workspace');
   readonly exportView = signal<ViewType>('front');
-  readonly viewTypes: ViewType[] = ['front', 'side', 'top'];
+  readonly viewTypes = VIEW_TYPES;
   readonly referenceView = signal<ViewType>('front');
   readonly reference = computed(() => this.state.project().referenceImages?.[this.referenceView()]);
   readonly imageLoading = signal(false);
@@ -47,6 +47,7 @@ export class App {
     { id: 'polyline', label: 'Polyline', key: 'L' },
     { id: 'rectangle', label: 'Rectangle', key: 'R' },
     { id: 'measure', label: 'Measure', key: 'M' },
+    { id: 'move-reference', label: 'Move / resize image', key: 'I' },
     { id: 'delete-point', label: 'Delete point', key: 'D' },
     { id: 'delete-edge', label: 'Delete edge', key: 'K' },
   ];
@@ -54,7 +55,9 @@ export class App {
   readonly splitX = signal(50);
   readonly splitY = signal(50);
   readonly planeAxis = () =>
-    this.state.activeView() === 'front' ? 'Y' : this.state.activeView() === 'side' ? 'X' : 'Z';
+    (['x', 'y', 'z'] as const)
+      .find((axis) => !VIEW_AXES[this.state.activeView()].includes(axis))!
+      .toUpperCase();
   constructor() {
     try {
       const saved = this.storage.load();
@@ -161,6 +164,18 @@ export class App {
         ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }),
     );
   }
+  selectReferenceView(view: ViewType): void {
+    this.referenceView.set(view);
+    this.activateView(view);
+  }
+  private activateView(view: ViewType): void {
+    this.views()
+      .find(
+        (viewport) =>
+          viewport.baseView() === (view === 'back' ? 'front' : view === 'bottom' ? 'top' : view),
+      )
+      ?.showView(view);
+  }
   async importReference(event: Event): Promise<void> {
     const input = event.target as HTMLInputElement,
       file = input.files?.[0];
@@ -175,10 +190,11 @@ export class App {
         centerU: previous?.centerU ?? 0,
         centerV: previous?.centerV ?? 0,
         width: previous?.width ?? 10,
+        rotation: previous?.rotation ?? 0,
         opacity: previous?.opacity ?? 0.5,
         visible: true,
       });
-      this.state.activeView.set(view);
+      this.activateView(view);
       this.views()
         .find((v) => v.view() === view)
         ?.fit();
@@ -193,7 +209,7 @@ export class App {
     }
   }
   traceReference(): void {
-    this.state.activeView.set(this.referenceView());
+    this.activateView(this.referenceView());
     this.state.setPointPlacement('plane');
     this.state.setTool('add');
     this.rightOpen.set(false);
@@ -201,7 +217,17 @@ export class App {
       `Click in ${this.referenceView()} view to trace points. The hidden ${this.planeAxis()} axis uses the construction depth.`,
     );
   }
+  moveReference(): void {
+    this.activateView(this.referenceView());
+    this.state.setTool('move-reference');
+    this.rightOpen.set(false);
+    this.views()
+      .find((view) => view.view() === this.referenceView())
+      ?.canvas()
+      .nativeElement.focus();
+  }
   fitReference(): void {
+    this.activateView(this.referenceView());
     this.views()
       .find((v) => v.view() === this.referenceView())
       ?.fit();
