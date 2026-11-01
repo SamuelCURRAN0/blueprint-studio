@@ -4,6 +4,7 @@ import {
   computed,
   effect,
   ElementRef,
+  HostListener,
   inject,
   input,
   NgZone,
@@ -49,6 +50,50 @@ export class ViewportComponent implements AfterViewInit, OnDestroy {
   });
   readonly hover = signal<Position | null>(null);
   readonly tooltip = signal('');
+  readonly pointPicker = computed(() => {
+    const picker = this.state.pointPicker();
+    return picker?.view === this.view() ? picker : null;
+  });
+  readonly pointChoices = computed(() => {
+    const project = this.state.project();
+    const visible = new Set(this.state.visiblePoints().map((p) => p.id));
+    const points = new Map(
+      project.points.map((point, index) => [point.id, { point, number: index + 1 }]),
+    );
+    const owners = new Map(
+      project.objects.flatMap((o) => o.pointIds.map((id) => [id, o] as const)),
+    );
+    const start = this.state.chainId();
+    const startOwner = start ? owners.get(start) : null;
+    return (this.pointPicker()?.pointIds ?? [])
+      .filter((id) => visible.has(id))
+      .map((id) => {
+        const { point, number } = points.get(id)!;
+        const object = owners.get(id)!;
+        const disabledReason = !this.state.isEditable(id)
+          ? 'Locked'
+          : start === id
+            ? 'Starting node'
+            : startOwner && startOwner.id !== object.id
+              ? 'Different object'
+              : '';
+        return { point, number, object, disabledReason };
+      });
+  });
+  readonly pickerLayout = computed(() => {
+    const position = this.pointPicker()?.position ?? { u: 0, v: 0 };
+    const { width, height } = this.size();
+    const panelWidth = Math.max(0, Math.min(280, width - 16));
+    const panelHeight = Math.max(0, Math.min(300, height - 16));
+    const estimatedHeight = Math.min(panelHeight, 50 + this.pointChoices().length * 66);
+    return {
+      width: panelWidth,
+      maxHeight: panelHeight,
+      left: Math.max(8, Math.min(position.u + 12, width - panelWidth - 8)),
+      top: Math.max(8, Math.min(position.v + 12, height - estimatedHeight - 8)),
+    };
+  });
+  readonly pickerElement = viewChild<ElementRef<HTMLElement>>('pointPickerElement');
   readonly format = format;
   private readonly referenceSource = computed(
     () => this.state.project().referenceImages?.[this.view()]?.dataUrl,
@@ -71,6 +116,7 @@ export class ViewportComponent implements AfterViewInit, OnDestroy {
       this.state.project();
       this.state.visiblePoints();
       this.state.selectedId();
+      this.state.highlightedId();
       this.state.pending();
       this.state.preview();
       this.state.showGrid();
@@ -84,6 +130,11 @@ export class ViewportComponent implements AfterViewInit, OnDestroy {
       this.state.chainId();
       this.referenceImage();
       this.scheduleRender();
+    });
+    effect(() => {
+      this.pickerElement()
+        ?.nativeElement.querySelector<HTMLButtonElement>('[data-point-choice]:not(:disabled)')
+        ?.focus();
     });
     effect((onCleanup) => {
       const source = this.referenceSource();
@@ -143,6 +194,7 @@ export class ViewportComponent implements AfterViewInit, OnDestroy {
     this.resize.observe(this.canvas().nativeElement);
   }
   ngOnDestroy(): void {
+    if (this.pointPicker()) this.state.dismissPointPicker();
     this.resize?.disconnect();
     cancelAnimationFrame(this.frame);
   }
@@ -165,7 +217,7 @@ export class ViewportComponent implements AfterViewInit, OnDestroy {
       grid: this.state.showGrid(),
       gridSize: this.state.gridSize(),
       labels: this.state.showLabels(),
-      selectedId: this.state.selectedId(),
+      selectedId: this.state.highlightedId() ?? this.state.selectedId(),
       pending: this.state.pending(),
       preview: this.state.preview(),
       cursor,
@@ -199,21 +251,67 @@ export class ViewportComponent implements AfterViewInit, OnDestroy {
     return this.state.snap() ? snapToGrid(p, this.state.gridSize()) : p;
   }
   private hit(position: Position): string | null {
-    let closest: string | null = null,
-      distance = 10;
-    for (const point of this.state.visiblePoints()) {
-      const p = worldToScreen(projectPoint(point, this.view()), this.transform());
-      const d = Math.hypot(position.u - p.u, position.v - p.v);
-      if (d < distance) {
-        closest = point.id;
-        distance = d;
-      }
+    return this.hitPoints(position)[0] ?? null;
+  }
+  private hitPoints(position: Position): string[] {
+    return this.state
+      .visiblePoints()
+      .map((point) => {
+        const p = worldToScreen(projectPoint(point, this.view()), this.transform());
+        return { id: point.id, distance: Math.hypot(position.u - p.u, position.v - p.v) };
+      })
+      .filter((hit) => hit.distance < 10)
+      .sort((a, b) => a.distance - b.distance)
+      .map((hit) => hit.id);
+  }
+  choosePoint(id: string): void {
+    if (
+      !this.pointPicker() ||
+      this.state.pending() ||
+      !['edge', 'polyline'].includes(this.state.tool()) ||
+      !this.pointChoices().some((choice) => choice.point.id === id && !choice.disabledReason)
+    )
+      return;
+    this.state.connect(id);
+    this.canvas().nativeElement.focus();
+  }
+  closePointPicker(): void {
+    this.state.dismissPointPicker();
+    this.canvas().nativeElement.focus();
+  }
+  pickerKeydown(event: KeyboardEvent): void {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      this.closePointPicker();
+    } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      const buttons = Array.from(
+        this.pickerElement()!.nativeElement.querySelectorAll<HTMLButtonElement>(
+          '[data-point-choice]:not(:disabled)',
+        ),
+      );
+      const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+      const next =
+        index < 0
+          ? 0
+          : (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length;
+      buttons[next]?.focus();
     }
-    return closest;
+  }
+  @HostListener('document:pointerdown', ['$event'])
+  outsidePointPicker(event: PointerEvent): void {
+    if (
+      this.pointPicker() &&
+      event.target !== this.canvas().nativeElement &&
+      !(event.target instanceof Element && event.target.closest('.point-picker'))
+    )
+      this.state.dismissPointPicker();
   }
   pointerDown(event: PointerEvent): void {
     if (event.button !== 0 && event.button !== 1) return;
     event.preventDefault();
+    this.state.dismissPointPicker();
     this.state.activeView.set(this.view());
     this.state.zoom.set((this.transform().scale / 40) * 100);
     this.canvas().nativeElement.focus();
@@ -251,7 +349,11 @@ export class ViewportComponent implements AfterViewInit, OnDestroy {
       return;
     }
     if (this.state.tool() === 'edge' || this.state.tool() === 'polyline') {
-      if (id && !this.state.pending()) this.state.connect(id);
+      const candidates = this.hitPoints(screen);
+      if (candidates.length > 1 && !this.state.pending()) {
+        this.tooltip.set('');
+        this.state.pointPicker.set({ view: this.view(), position: screen, pointIds: candidates });
+      } else if (id && !this.state.pending()) this.state.connect(id);
       else if (this.state.tool() === 'polyline')
         this.state.addClick(this.view(), this.position(event));
       return;
@@ -324,6 +426,7 @@ export class ViewportComponent implements AfterViewInit, OnDestroy {
     this.zoomAt(this.transform().scale * Math.exp(-event.deltaY * 0.0015), this.screen(event));
   }
   zoomAt(scale: number, anchor = { u: this.size().width / 2, v: this.size().height / 2 }): void {
+    this.state.dismissPointPicker();
     scale = Math.max(1e-7, Math.min(1e6, scale));
     const p = screenToWorld(anchor, this.transform());
     this.transform.set({ scale, panX: anchor.u - p.u * scale, panY: anchor.v + p.v * scale });
@@ -332,12 +435,14 @@ export class ViewportComponent implements AfterViewInit, OnDestroy {
       this.state.linkedZoom.set({ source: this.view(), scale, tick: Date.now() });
   }
   reset(): void {
+    this.state.dismissPointPicker();
     const { width, height } = this.size();
     this.transform.set({ scale: 40, panX: width / 2, panY: height / 2 });
     this.updateZoomStatus();
     if (this.state.syncZoom()) this.zoomAt(40);
   }
   fit(): void {
+    this.state.dismissPointPicker();
     const points = this.state.visiblePoints().map((p) => projectPoint(p, this.view()));
     const reference = this.state.project().referenceImages?.[this.view()];
     if (reference?.visible) points.push(...referenceCorners(reference));

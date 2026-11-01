@@ -162,3 +162,84 @@ canvas.drawing {
   border-radius: 50%;
   margin-right: 7px;
 }
+.point-picker {
+  position: absolute;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  background: #272e33;
+  border: 1px solid #648b7d;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px #0008;
+  overflow: hidden;
+}
+.picker-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  padding: 7px 10px;
+  font-size: 11px;
+  color: #d6e6df;
+  border-bottom: 1px solid #414b50;
+}
+.picker-heading small {
+  margin-left: 5px;
+  color: #8fa69c;
+}
+.picker-heading button {
+  display: grid;
+  place-items: center;
+  padding: 3px;
+  border: 0;
+  background: transparent;
+  color: #a1b2b9;
+}
+.picker-heading app-icon {
+  width: 13px;
+  height: 13px;
+}
+.picker-choices {
+  overflow-y: auto;
+  min-height: 0;
+  padding: 4px;
+}
+.picker-choices button {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  padding: 9px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  text-align: left;
+  color: #c2d0d6;
+}
+.picker-choices button:hover:not(:disabled),
+.picker-choices button:focus-visible {
+  background: #3b4b43;
+}
+.choice-title {
+  display: flex;
+  gap: 9px;
+  font-size: 10px;
+  max-width: 100%;
+}
+.choice-title b {
+  flex-shrink: 0;
+}
+.choice-title > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.choice-coordinates {
+  font: 9px monospace;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.choice-reason {
+  font-size: 9px;
+  color: #d3b77c;
+}

@@ -29,7 +29,66 @@
       (contextmenu)="$event.preventDefault()"
     ></canvas>
     <span class="view-label">ORTHOGRAPHIC <span>·</span> {{ axes() }}</span>
-    @if (tooltip()) {
+    @if (pointPicker()) {
+      <div
+        #pointPickerElement
+        class="point-picker"
+        role="dialog"
+        aria-label="Choose a node"
+        [style.left.px]="pickerLayout().left"
+        [style.top.px]="pickerLayout().top"
+        [style.width.px]="pickerLayout().width"
+        [style.max-height.px]="pickerLayout().maxHeight"
+        (keydown)="pickerKeydown($event)"
+        (pointerleave)="state.highlightedId.set(null)"
+      >
+        <div class="picker-heading">
+          <span
+            >Choose a node <small>{{ pointChoices().length }}</small></span
+          >
+          <button aria-label="Close node picker" title="Close (Esc)" (click)="closePointPicker()">
+            <app-icon name="close" />
+          </button>
+        </div>
+        <div class="picker-choices">
+          @for (choice of pointChoices(); track choice.point.id) {
+            <button
+              data-point-choice
+              [disabled]="!!choice.disabledReason"
+              [attr.aria-label]="
+                'Choose P' +
+                choice.number +
+                ', ' +
+                choice.object.name +
+                ', X ' +
+                format(choice.point.x) +
+                ', Y ' +
+                format(choice.point.y) +
+                ', Z ' +
+                format(choice.point.z)
+              "
+              (pointerenter)="state.highlightedId.set(choice.point.id)"
+              (focus)="state.highlightedId.set(choice.point.id)"
+              (blur)="state.highlightedId.set(null)"
+              (click)="choosePoint(choice.point.id)"
+            >
+              <span class="choice-title"
+                ><b [style.color]="choice.object.color">P{{ choice.number }}</b
+                ><span>{{ choice.object.name }}</span></span
+              >
+              <span class="choice-coordinates"
+                >X {{ format(choice.point.x) }} · Y {{ format(choice.point.y) }} · Z
+                {{ format(choice.point.z) }} {{ state.project().units }}</span
+              >
+              @if (choice.disabledReason) {
+                <span class="choice-reason">{{ choice.disabledReason }}</span>
+              }
+            </button>
+          }
+        </div>
+      </div>
+    }
+    @if (tooltip() && !pointPicker()) {
       <div class="coordinate-tooltip">{{ tooltip() }}</div>
     }
     @if (state.pending(); as pending) {

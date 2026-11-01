@@ -72,6 +72,8 @@ View dividers are draggable; double-click restores an even split. Grid, snapping
 
 Edges store only point IDs. Moving a point updates every connected edge in all views. Each point and edge belongs to exactly one object. The Explorer creates objects and layers; object Properties edits name, color and layer. Both objects and layers support visibility and locking. Deleting a layer moves its objects to a remaining layer. Deleting an object deletes its own geometry; undo restores it.
 
+When **Connect points** or **Polyline** finds several nodes under a click, a picker opens beside the cursor. Choose the exact node by its point number, object and XYZ coordinates. Hover or focus a choice to highlight it across all views; arrow keys move between choices and Enter selects. Locked nodes, the starting node and nodes in another object are marked unavailable. Escape or clicking outside closes the picker while preserving the unfinished line. A single nearby node connects immediately.
+
 ## Projects and exports
 
 - **Recovery:** an automatic browser-local copy is updated after a short debounce.

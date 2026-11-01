@@ -1,4 +1,4 @@
-import { computed, inject, Injectable, signal } from '@angular/core';
+import { computed, effect, inject, Injectable, signal, untracked } from '@angular/core';
 import {
   BlueprintEdge,
   BlueprintObject,
@@ -43,6 +43,12 @@ export class BlueprintService {
   readonly project = signal<BlueprintProject>(emptyProject());
   readonly tool = signal<Tool>('select');
   readonly selectedId = signal<string | null>(null);
+  readonly highlightedId = signal<string | null>(null);
+  readonly pointPicker = signal<{
+    view: ViewType;
+    position: Position;
+    pointIds: string[];
+  } | null>(null);
   readonly activeObjectId = signal('object-1');
   readonly activeView = signal<ViewType>('front');
   readonly pending = signal<Projection | null>(null);
@@ -81,6 +87,16 @@ export class BlueprintService {
     );
     return project.points.filter((p) => ids.has(p.id));
   });
+  constructor() {
+    effect(() => {
+      this.project();
+      untracked(() => this.dismissPointPicker());
+    });
+  }
+  dismissPointPicker(): void {
+    this.pointPicker.set(null);
+    this.highlightedId.set(null);
+  }
   id(prefix: string): string {
     return `${prefix}-${crypto.randomUUID()}`;
   }
@@ -138,6 +154,7 @@ export class BlueprintService {
     this.notice.set(hints[tool]);
   }
   cancel(): void {
+    this.dismissPointPicker();
     this.pending.set(null);
     this.preview.set(null);
     this.chainId.set(null);
@@ -301,6 +318,7 @@ export class BlueprintService {
     if (object) this.activeObjectId.set(object.id);
   }
   connect(id: string): void {
+    this.dismissPointPicker();
     if (!this.isEditable(id)) {
       this.notice.set('Unlock the object before editing.');
       return;
